@@ -70,7 +70,7 @@ public class HelloVR extends ApplicationAdapter {
 	}
 
 	private void renderScene(Eye eye) {
-		VRCamera camera = context.getCamera(eye);
+		VRCamera camera = context.getEyeData(eye).cameras;
 
 		context.beginEye(eye);
 

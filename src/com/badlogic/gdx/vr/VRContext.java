@@ -8,10 +8,13 @@ import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.graphics.glutils.FrameBuffer;
 import com.badlogic.gdx.math.Matrix4;
+import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.utils.BufferUtils;
 import com.badlogic.gdx.utils.Disposable;
 import com.badlogic.gdx.utils.GdxRuntimeException;
 
+import vr.HmdMatrix34_t;
+import vr.HmdMatrix44_t;
 import vr.IVRCompositor_FnTable;
 import vr.IVRSystem;
 import vr.Texture_t;
@@ -44,21 +47,28 @@ public class VRContext implements Disposable {
 		Eye(int index) {
 			this.index = index;
 		}
-	}
+	}	
 
+	// couple of scratch buffers
 	private final IntBuffer error = BufferUtils.newIntBuffer(1);
 	private final IntBuffer scratch = BufferUtils.newIntBuffer(1), scratch2 = BufferUtils.newIntBuffer(1);
+	
+	// OpenVR components 
 	final IVRSystem system;
 	final IVRCompositor_FnTable compositor;
-	private final FrameBuffer[] buffers = new FrameBuffer[Eye.values().length];
-	private final Texture_t[] textures = new Texture_t[Eye.values().length];
-	private final TextureRegion[] regions = new TextureRegion[Eye.values().length];
-	private final VRCamera[] cameras = new VRCamera[Eye.values().length];
-	private final SpriteBatch batcher;
-	private final TrackedDevicePose_t.ByReference trackedDevicePosesReference = new TrackedDevicePose_t.ByReference();
-    public final TrackedDevicePose_t[] trackedDevicePoses = (TrackedDevicePose_t[]) trackedDevicePosesReference.toArray(VR.k_unMaxTrackedDeviceCount);
-    public final Matrix4[] devicePoses = new Matrix4[VR.k_unMaxTrackedDeviceCount];
 	
+	// per eye data such as rendering surfaces, textures, regions, cameras etc. for each eye
+	private final VRPerEyeData perEyeData[] = new VRPerEyeData[2];
+	
+	// batcher to draw eye rendering surface to companion window
+	private final SpriteBatch batcher;
+	
+	// internal native objects to get device poses 
+	private final TrackedDevicePose_t.ByReference trackedDevicePosesReference = new TrackedDevicePose_t.ByReference();
+    private final TrackedDevicePose_t[] trackedDevicePoses = (TrackedDevicePose_t[]) trackedDevicePosesReference.toArray(VR.k_unMaxTrackedDeviceCount);
+    private final VRDevicePose[] devicePoses = new VRDevicePose[trackedDevicePoses.length];
+    
+    // book keeping
 	private Eye currentEye = null;
 	private boolean renderingStarted = false;
 
@@ -77,7 +87,7 @@ public class VRContext implements Disposable {
 		checkInitError(error);
 		
 		for (int i = 0; i < devicePoses.length; i++) {
-			devicePoses[i] = new Matrix4();
+			devicePoses[i] = new VRDevicePose(i);
 		}
 		
 		system.GetRecommendedRenderTargetSize.apply(scratch, scratch2);
@@ -91,13 +101,13 @@ public class VRContext implements Disposable {
 	}
 	
 	private void setupEye(Eye eye, int width, int height, boolean hasStencil) {
-		buffers[eye.index] = new FrameBuffer(Format.RGBA8888, width, height, true, hasStencil);
-		textures[eye.index] = new Texture_t(buffers[eye.index].getColorBufferTexture().getTextureObjectHandle(), VR.EGraphicsAPIConvention.API_OpenGL, VR.EColorSpace.ColorSpace_Gamma);
-		regions[eye.index] = new TextureRegion(buffers[eye.index].getColorBufferTexture());
-		regions[eye.index].flip(false, true);
-		VRCamera camera = cameras[eye.index] = new VRCamera(this, eye);
+		FrameBuffer buffer = new FrameBuffer(Format.RGBA8888, width, height, true, hasStencil);		
+		TextureRegion region = new TextureRegion(buffer.getColorBufferTexture());
+		region.flip(false, true);
+		VRCamera camera = new VRCamera(this, eye);
 		camera.near = 0.1f;
-		camera.far = 1000f;		
+		camera.far = 1000f;
+		perEyeData[eye.index] = new VRPerEyeData(buffer, region, camera);
 	}
 	
 	private void checkInitError(IntBuffer errorBuffer) {
@@ -118,25 +128,37 @@ public class VRContext implements Disposable {
 		
 		compositor.WaitGetPoses.apply(trackedDevicePosesReference, VR.k_unMaxTrackedDeviceCount, null, 0);
 		updateDevicePoses();
-		cameras[Eye.Left.index].update();
-		cameras[Eye.Right.index].update();
+		perEyeData[Eye.Left.index].cameras.update();
+		perEyeData[Eye.Right.index].cameras.update();
 	}
 	
 	private void updateDevicePoses() {        
         for (int device = 0; device < VR.k_unMaxTrackedDeviceCount; device++) {
-            if (trackedDevicePoses[device].bPoseIsValid == 1) {            	
-                VRCamera.hmdMat34ToMatrix4(trackedDevicePoses[device].mDeviceToAbsoluteTracking, devicePoses[device]);
-           }
+			TrackedDevicePose_t trackedPose = trackedDevicePoses[device];
+			VRDevicePose pose = devicePoses[device];
+			
+			hmdMat34ToMatrix4(trackedPose.mDeviceToAbsoluteTracking, pose.transform);
+			pose.velocity.set(trackedPose.vVelocity.v);
+			pose.angularVelocity.set(trackedPose.vAngularVelocity.v);
+			pose.isConnected = trackedPose.bDeviceIsConnected != 0;
+			pose.isValid = trackedPose.bPoseIsValid != 0;
         }
     }
 
 	/**
-	 * @param deviceIndex device index, use 
-	 * @return the device pose (translation, rotation)
+	 * @param deviceIndex device index, {@link #HMD_DEVICE_INDEX} for the head mounted display
+	 * @return the {@link VRDevicePose}
 	 */
-	public Matrix4 getDevicePose(int deviceIndex) {
+	public VRDevicePose getDevicePose(int deviceIndex) {
 		if (deviceIndex < 0 || deviceIndex >= devicePoses.length) throw new IndexOutOfBoundsException("Device index must be >= 0 and <= " + devicePoses.length);
 		return devicePoses[deviceIndex];
+	}
+	
+	/**
+	 * @return the {@link VRPerEyeData} such as rendering surface and camera
+	 */
+	public VRPerEyeData getEyeData(Eye eye) {
+		return perEyeData[eye.index];
 	}
 	
 	/**
@@ -147,7 +169,7 @@ public class VRContext implements Disposable {
 		if (!renderingStarted) throw new GdxRuntimeException("Call begin() before calling beginEye()");
 		if (currentEye != null) throw new GdxRuntimeException("Last beginEye() call not completed, call endEye() before starting a new render");
 		currentEye = eye;
-		buffers[eye.index].begin();
+		perEyeData[eye.index].buffer.begin();
 	}
 	
 	/**
@@ -155,7 +177,7 @@ public class VRContext implements Disposable {
 	 */
 	public void endEye() {
 		if (currentEye == null) throw new GdxRuntimeException("Call beginEye() before endEye()");
-		buffers[currentEye.index].end();
+		perEyeData[currentEye.index].buffer.end();
 		currentEye = null;		
 	}
 	
@@ -167,14 +189,15 @@ public class VRContext implements Disposable {
 		if (!renderingStarted) throw new GdxRuntimeException("Call begin() before end()");
 		renderingStarted = false;
 		
-		compositor.Submit.apply(VR.EVREye.EYE_Left, textures[Eye.Left.index], null, VR.EVRSubmitFlags.Submit_Default);
-		compositor.Submit.apply(VR.EVREye.Eye_Right, textures[Eye.Right.index], null, VR.EVRSubmitFlags.Submit_Default);
+		compositor.Submit.apply(VR.EVREye.EYE_Left, perEyeData[Eye.Left.index].texture, null, VR.EVRSubmitFlags.Submit_Default);
+		compositor.Submit.apply(VR.EVREye.Eye_Right, perEyeData[Eye.Right.index].texture, null, VR.EVRSubmitFlags.Submit_Default);
 		Gdx.gl.glFinish();
 		compositor.PostPresentHandoff.apply();		
 	}
 	
 	public void dispose() {
-		for (FrameBuffer b: buffers) b.dispose();
+		for (VRPerEyeData eyeData: perEyeData)
+			eyeData.buffer.dispose();
 		batcher.dispose();
 		VR.VR_Shutdown();
 	}
@@ -184,16 +207,17 @@ public class VRContext implements Disposable {
 	 * can be displayed without stretching.
 	 */
 	public void resizeCompanionWindow() {
-		Gdx.graphics.setWindowedMode(buffers[0].getWidth(), buffers[0].getHeight());
+		FrameBuffer buffer = perEyeData[0].buffer;
+		Gdx.graphics.setWindowedMode(buffer.getWidth(), buffer.getHeight());
 	}
 	
 	/**
 	 * Renders the content of the given eye's rendering surface
 	 * to the entirety of the companion window.
 	 */
-	public void renderToCompanionWindow(Eye eye) {
-		FrameBuffer buffer = buffers[eye.index];
-		TextureRegion region = regions[eye.index];		
+	public void renderToCompanionWindow(Eye eye) {		
+		FrameBuffer buffer = perEyeData[eye.index].buffer;
+		TextureRegion region = perEyeData[eye.index].region;		
 		batcher.getProjectionMatrix().setToOrtho2D(0, 0, buffer.getWidth(), buffer.getHeight());
 		batcher.begin();
 		batcher.draw(region, 0, 0);
@@ -201,16 +225,120 @@ public class VRContext implements Disposable {
 	}
 	
 	/**
-	 * @return the rendering surface for the given eye.
+	 * Keeps track of per eye data such as rendering surface,
+	 * or {@link VRCamera}.
 	 */
-	public FrameBuffer getFrameBuffer(Eye eye) {
-		return buffers[eye.index];
+	public static class VRPerEyeData {
+		/** the {@link FrameBuffer} for this eye */
+		public final FrameBuffer buffer;		
+		/** a {@link TextureRegion} wrapping the color texture of the framebuffer for 2D rendering **/
+		public final TextureRegion region;
+		/** the {@link VRCamera} for this eye **/
+		public final VRCamera cameras;		
+		/** used internally to submit the frame buffer to OpenVR **/
+		final Texture_t texture;
+		
+		VRPerEyeData(FrameBuffer buffer, TextureRegion region, VRCamera cameras) {
+			this.buffer = buffer;
+			this.region = region;
+			this.cameras = cameras;
+			this.texture = new Texture_t(buffer.getColorBufferTexture().getTextureObjectHandle(), VR.EGraphicsAPIConvention.API_OpenGL, VR.EColorSpace.ColorSpace_Gamma);
+		}
 	}
 	
 	/**
-	 * @return the {@link VRCamera} updated to the latest tracking position for the given eye.
+	 * Represents the pose of a {@link VRDevice}, including its
+	 * transform, velocity and angular velocity. Also indicates
+	 * whether the pose is valid and whether the device is connected. 
 	 */
-	public VRCamera getCamera(Eye eye) {
-		return cameras[eye.index];
+	static class VRDevicePose {
+		/** the world space transformation **/
+		public final Matrix4 transform = new Matrix4();
+		/** the velocity in m/s in world space **/
+		public final Vector3 velocity = new Vector3();
+		/** the angular velocity in radians/s **/
+		public final Vector3 angularVelocity = new Vector3();
+		/** whether the pose is valid our invalid, e.g. outdated because of tracking failure**/
+		public boolean isValid;
+		/** whether the device is connected **/
+		public boolean isConnected;
+		/** the device index **/
+		private final int index;
+		
+		public VRDevicePose(int index) {
+			this.index = index;
+		}
+	}
+	
+	/**
+	 * Represents a tracked VR device such as the head mounted
+	 * display, wands etc.
+	 */
+	public class VRDevice {		
+		private final VRDevicePose pose;		
+		
+		VRDevice(VRDevicePose pose) {
+			this.pose = pose;
+		}
+		
+		/**
+		 * @return the most up-to-date {@link VRDevicePose}
+		 */
+		public VRDevicePose getPose() {
+			return pose;
+		}			
+		
+		void update() {			
+		}
+	}
+	
+	static void hmdMat4toMatrix4(HmdMatrix44_t hdm, Matrix4 mat) {
+		float[] val = mat.val;
+		float[] m = hdm.m;
+		
+		val[0] = m[0];
+		val[1] = m[4];
+		val[2] = m[8];
+		val[3] = m[12];
+		
+		val[4] = m[1];
+		val[5] = m[5];
+		val[6] = m[9];
+		val[7] = m[13];
+		
+		val[8] = m[2];
+		val[9] = m[6];
+		val[10] = m[10];
+		val[11] = m[14];
+		
+		val[12] = m[3];
+		val[13] = m[7];
+		val[14] = m[11];
+		val[15] = m[15];
+	}
+	
+	static void hmdMat34ToMatrix4(HmdMatrix34_t hmd, Matrix4 mat) {
+		float[] val = mat.val;
+		float[] m = hmd.m;
+		
+		val[0] = m[0];
+		val[1] = m[4];
+		val[2] = m[8];
+		val[3] = 0;
+		
+		val[4] = m[1];
+		val[5] = m[5];
+		val[6] = m[9];
+		val[7] = 0;
+		
+		val[8] = m[2];
+		val[9] = m[6];
+		val[10] = m[10];
+		val[11] = 0;
+		
+		val[12] = m[3];
+		val[13] = m[7];
+		val[14] = m[11];
+		val[15] = 1;
 	}
 }
