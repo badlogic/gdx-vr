@@ -44,8 +44,8 @@ public class HelloVR extends ApplicationAdapter {
         		for (int x = -3; x <= 3; x += 3) {
         			if (x == 0 && y == 0 && z == 0) continue;
         			ModelInstance cube = new ModelInstance(cubeModel);
-        	        cube.transform.translate(x, y, z);
-        	        cubes.add(cube);
+					cube.transform.translate(x, y, z);
+					cubes.add(cube);
         		}
         	}
         }        
