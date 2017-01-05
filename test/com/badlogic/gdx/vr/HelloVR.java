@@ -19,26 +19,25 @@ import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.vr.VRContext.Eye;
 
 public class HelloVR extends ApplicationAdapter {
-	VRContext context;	
+	VRContext context;
 	ModelBatch batch;
 	Environment environment;
 	Model cubeModel;
-	Array<ModelInstance> cubes = new Array<ModelInstance>();	
-	
+	Array<ModelInstance> cubes = new Array<ModelInstance>();
+
 	@Override
 	public void create() {
 		context = new VRContext(false);
-		context.resizeCompanionWindow();		
+		context.resizeCompanionWindow();
 		createScene();
 	}
-	
-	private void createScene() {		
+
+	private void createScene() {
 		batch = new ModelBatch();
 		ModelBuilder modelBuilder = new ModelBuilder();
-        cubeModel = modelBuilder.createBox(1f, 1f, 1f, 
-                new Material(ColorAttribute.createDiffuse(Color.GREEN)),
-                Usage.Position | Usage.Normal);
-        
+		cubeModel = modelBuilder.createBox(1f, 1f, 1f, new Material(ColorAttribute.createDiffuse(Color.GREEN)),
+				Usage.Position | Usage.Normal);
+
 		for (int z = -3; z <= 3; z += 3) {
 			for (int y = -3; y <= 3; y += 3) {
 				for (int x = -3; x <= 3; x += 3) {
@@ -49,40 +48,40 @@ public class HelloVR extends ApplicationAdapter {
 					cubes.add(cube);
 				}
 			}
-		}        
-        
-        environment = new Environment();
-        environment.set(new ColorAttribute(ColorAttribute.AmbientLight, 0.4f, 0.4f, 0.4f, 1f));
-        environment.add(new DirectionalLight().set(0.8f, 0.8f, 0.8f, -1f, -0.8f, -0.2f));
+		}
+
+		environment = new Environment();
+		environment.set(new ColorAttribute(ColorAttribute.AmbientLight, 0.4f, 0.4f, 0.4f, 1f));
+		environment.add(new DirectionalLight().set(0.8f, 0.8f, 0.8f, -1f, -0.8f, -0.2f));
 	}
 
 	@Override
 	public void render() {
 		// render the scene for the left/right eye
-		context.begin();						
+		context.begin();
 		renderScene(Eye.Left);
-		renderScene(Eye.Right);		
-		context.end();	
-		
+		renderScene(Eye.Right);
+		context.end();
+
 		// render the left eye result to the companion window
 		Gdx.gl.glClearColor(1, 0, 0, 1);
 		Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
 		context.renderToCompanionWindow(Eye.Left);
 	}
-	
+
 	private void renderScene(Eye eye) {
 		VRCamera camera = context.getCamera(eye);
-		
+
 		context.beginEye(eye);
-		
+
 		Gdx.gl.glClearColor(0, 0, 0, 1);
 		Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
-						
+
 		batch.begin(camera);
-		for (ModelInstance cube: cubes)
+		for (ModelInstance cube : cubes)
 			batch.render(cube, environment);
 		batch.end();
-		
+
 		context.endEye();
 	}
 
@@ -90,7 +89,7 @@ public class HelloVR extends ApplicationAdapter {
 	public void dispose() {
 		context.dispose();
 		batch.dispose();
-		cubeModel.dispose();		
+		cubeModel.dispose();
 	}
 
 	public static void main(String[] args) {
