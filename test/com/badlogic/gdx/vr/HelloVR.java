@@ -39,16 +39,17 @@ public class HelloVR extends ApplicationAdapter {
                 new Material(ColorAttribute.createDiffuse(Color.GREEN)),
                 Usage.Position | Usage.Normal);
         
-        for (int z = -3; z <= 3; z += 3) {
-        	for (int y = -3; y <= 3; y += 3) {
-        		for (int x = -3; x <= 3; x += 3) {
-        			if (x == 0 && y == 0 && z == 0) continue;
-        			ModelInstance cube = new ModelInstance(cubeModel);
+		for (int z = -3; z <= 3; z += 3) {
+			for (int y = -3; y <= 3; y += 3) {
+				for (int x = -3; x <= 3; x += 3) {
+					if (x == 0 && y == 0 && z == 0)
+						continue;
+					ModelInstance cube = new ModelInstance(cubeModel);
 					cube.transform.translate(x, y, z);
 					cubes.add(cube);
-        		}
-        	}
-        }        
+				}
+			}
+		}        
         
         environment = new Environment();
         environment.set(new ColorAttribute(ColorAttribute.AmbientLight, 0.4f, 0.4f, 0.4f, 1f));
