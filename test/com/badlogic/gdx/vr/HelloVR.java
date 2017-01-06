@@ -17,6 +17,11 @@ import com.badlogic.gdx.graphics.g3d.environment.DirectionalLight;
 import com.badlogic.gdx.graphics.g3d.utils.ModelBuilder;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.vr.VRContext.Eye;
+import com.badlogic.gdx.vr.VRContext.VRControllerButtons;
+import com.badlogic.gdx.vr.VRContext.VRControllerRole;
+import com.badlogic.gdx.vr.VRContext.VRDevice;
+import com.badlogic.gdx.vr.VRContext.VRDeviceListener;
+import com.badlogic.gdx.vr.VRContext.VRDeviceType;
 
 public class HelloVR extends ApplicationAdapter {
 	VRContext context;
@@ -30,6 +35,29 @@ public class HelloVR extends ApplicationAdapter {
 		context = new VRContext(false);
 		context.resizeCompanionWindow();
 		createScene();
+		
+		context.addListener(new VRDeviceListener() {						
+			@Override
+			public void connected(VRDevice device) {
+				System.out.println(device + " connected");
+			}
+			
+			@Override
+			public void disconnected(VRDevice device) {
+				System.out.println(device + " disconnected");
+			}			
+			
+			@Override
+			public void buttonPressed(VRDevice device, int button) {
+				System.out.println(device + " button pressed: " + button);
+				device.triggerHapticPulse((short)1000);
+			}
+			
+			@Override
+			public void buttonReleased(VRDevice device, int button) {
+				System.out.println(device + " button released: " + button);				
+			}
+		});
 	}
 
 	private void createScene() {
@@ -67,6 +95,8 @@ public class HelloVR extends ApplicationAdapter {
 		Gdx.gl.glClearColor(1, 0, 0, 1);
 		Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
 		context.renderToCompanionWindow(Eye.Left);
+		
+		VRDevice device = context.getDeviceByType(VRDeviceType.Controller);
 	}
 
 	private void renderScene(Eye eye) {
