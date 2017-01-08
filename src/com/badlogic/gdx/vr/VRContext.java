@@ -3,21 +3,42 @@ package com.badlogic.gdx.vr;
 import java.nio.IntBuffer;
 
 import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.graphics.GL20;
+import com.badlogic.gdx.graphics.Mesh;
+import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.Pixmap.Format;
+import com.badlogic.gdx.graphics.Texture;
+import com.badlogic.gdx.graphics.VertexAttribute;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
+import com.badlogic.gdx.graphics.g3d.Material;
+import com.badlogic.gdx.graphics.g3d.Model;
+import com.badlogic.gdx.graphics.g3d.ModelInstance;
+import com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute;
+import com.badlogic.gdx.graphics.g3d.model.MeshPart;
+import com.badlogic.gdx.graphics.g3d.model.Node;
+import com.badlogic.gdx.graphics.g3d.model.NodePart;
 import com.badlogic.gdx.graphics.glutils.FrameBuffer;
+import com.badlogic.gdx.graphics.glutils.PixmapTextureData;
 import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.BufferUtils;
 import com.badlogic.gdx.utils.Disposable;
 import com.badlogic.gdx.utils.GdxRuntimeException;
+import com.badlogic.gdx.utils.ObjectMap;
+import com.sun.jna.Memory;
+import com.sun.jna.Pointer;
+import com.sun.jna.ptr.PointerByReference;
 
 import vr.HmdMatrix34_t;
 import vr.HmdMatrix44_t;
 import vr.IVRCompositor_FnTable;
+import vr.IVRRenderModels_FnTable;
 import vr.IVRSystem;
+import vr.RenderModel_TextureMap_t;
+import vr.RenderModel_Vertex_t;
+import vr.RenderModel_t;
 import vr.Texture_t;
 import vr.TrackedDevicePose_t;
 import vr.VR;
@@ -117,6 +138,128 @@ public class VRContext implements Disposable {
 		public static final int SteamVR_Touchpad = Axis0;
 		public static final int SteamVR_Trigger = Axis1;
 	}
+	
+	public static enum VRDeviceProperty {
+		Invalid								(0),
+
+		// general properties that apply to all device classes
+		TrackingSystemName_String				(1000),
+		ModelNumber_String						(1001),
+		SerialNumber_String					(1002),
+		RenderModelName_String					(1003),
+		WillDriftInYaw_Bool					(1004),
+		ManufacturerName_String				(1005),
+		TrackingFirmwareVersion_String			(1006),
+		HardwareRevision_String				(1007),
+		AllWirelessDongleDescriptions_String	(1008),
+		ConnectedWirelessDongle_String			(1009),
+		DeviceIsWireless_Bool					(1010),
+		DeviceIsCharging_Bool					(1011),
+		DeviceBatteryPercentage_Float			(1012), // 0 is empty), 1 is full
+		// FIXME
+		// StatusDisplayTransform_Matrix34		(1013),
+		Firmware_UpdateAvailable_Bool			(1014),
+		Firmware_ManualUpdate_Bool				(1015),
+		Firmware_ManualUpdateURL_String		(1016),
+		HardwareRevision_Uint64				(1017),
+		FirmwareVersion_Uint64					(1018),
+		FPGAVersion_Uint64						(1019),
+		VRCVersion_Uint64						(1020),
+		RadioVersion_Uint64					(1021),
+		DongleVersion_Uint64					(1022),
+		BlockServerShutdown_Bool				(1023),
+		CanUnifyCoordinateSystemWithHmd_Bool	(1024),
+		ContainsProximitySensor_Bool			(1025),
+		DeviceProvidesBatteryStatus_Bool		(1026),
+		DeviceCanPowerOff_Bool					(1027),
+		Firmware_ProgrammingTarget_String		(1028),
+		DeviceClass_Int32						(1029),
+		HasCamera_Bool							(1030),
+		DriverVersion_String                   (1031),
+		Firmware_ForceUpdateRequired_Bool      (1032),
+		ViveSystemButtonFixRequired_Bool		(1033),
+
+		// Properties that are unique to TrackedDeviceClass_HMD
+		ReportsTimeSinceVSync_Bool				(2000),
+		SecondsFromVsyncToPhotons_Float		(2001),
+		DisplayFrequency_Float					(2002),
+		UserIpdMeters_Float					(2003),
+		CurrentUniverseId_Uint64				(2004), 
+		PreviousUniverseId_Uint64				(2005), 
+		DisplayFirmwareVersion_Uint64			(2006),
+		IsOnDesktop_Bool						(2007),
+		DisplayMCType_Int32					(2008),
+		DisplayMCOffset_Float					(2009),
+		DisplayMCScale_Float					(2010),
+		EdidVendorID_Int32						(2011),
+		DisplayMCImageLeft_String              (2012),
+		DisplayMCImageRight_String             (2013),
+		DisplayGCBlackClamp_Float				(2014),
+		EdidProductID_Int32					(2015),
+		// FIXME
+		// CameraToHeadTransform_Matrix34			(2016),
+		DisplayGCType_Int32					(2017),
+		DisplayGCOffset_Float					(2018),
+		DisplayGCScale_Float					(2019),
+		DisplayGCPrescale_Float				(2020),
+		DisplayGCImage_String					(2021),
+		LensCenterLeftU_Float					(2022),
+		LensCenterLeftV_Float					(2023),
+		LensCenterRightU_Float					(2024),
+		LensCenterRightV_Float					(2025),
+		UserHeadToEyeDepthMeters_Float			(2026),
+		CameraFirmwareVersion_Uint64			(2027),
+		CameraFirmwareDescription_String		(2028),
+		DisplayFPGAVersion_Uint64				(2029),
+		DisplayBootloaderVersion_Uint64		(2030),
+		DisplayHardwareVersion_Uint64			(2031),
+		AudioFirmwareVersion_Uint64			(2032),
+		CameraCompatibilityMode_Int32			(2033),
+		ScreenshotHorizontalFieldOfViewDegrees_Float (2034),
+		ScreenshotVerticalFieldOfViewDegrees_Float (2035),
+		DisplaySuppressed_Bool					(2036),
+		DisplayAllowNightMode_Bool				(2037),
+
+		// Properties that are unique to TrackedDeviceClass_Controller
+		AttachedDeviceId_String				(3000),
+		SupportedButtons_Uint64				(3001),
+		Axis0Type_Int32						(3002), // Return value is of type EVRControllerAxisType
+		Axis1Type_Int32						(3003), // Return value is of type EVRControllerAxisType
+		Axis2Type_Int32						(3004), // Return value is of type EVRControllerAxisType
+		Axis3Type_Int32						(3005), // Return value is of type EVRControllerAxisType
+		Axis4Type_Int32						(3006), // Return value is of type EVRControllerAxisType
+		ControllerRoleHint_Int32				(3007), // Return value is of type ETrackedControllerRole
+
+		// Properties that are unique to TrackedDeviceClass_TrackingReference
+		FieldOfViewLeftDegrees_Float			(4000),
+		FieldOfViewRightDegrees_Float			(4001),
+		FieldOfViewTopDegrees_Float			(4002),
+		FieldOfViewBottomDegrees_Float			(4003),
+		TrackingRangeMinimumMeters_Float		(4004),
+		TrackingRangeMaximumMeters_Float		(4005),
+		ModeLabel_String						(4006),
+
+		// Properties that are used for user interface like icons names
+		IconPathName_String						(5000), // usually a directory named "icons"
+		NamedIconPathDeviceOff_String				(5001), // PNG for static icon), or GIF for animation), 50x32 for headsets and 32x32 for others
+		NamedIconPathDeviceSearching_String		(5002), // PNG for static icon), or GIF for animation), 50x32 for headsets and 32x32 for others
+		NamedIconPathDeviceSearchingAlert_String	(5003), // PNG for static icon), or GIF for animation), 50x32 for headsets and 32x32 for others
+		NamedIconPathDeviceReady_String			(5004), // PNG for static icon), or GIF for animation), 50x32 for headsets and 32x32 for others
+		NamedIconPathDeviceReadyAlert_String		(5005), // PNG for static icon), or GIF for animation), 50x32 for headsets and 32x32 for others
+		NamedIconPathDeviceNotReady_String			(5006), // PNG for static icon), or GIF for animation), 50x32 for headsets and 32x32 for others
+		NamedIconPathDeviceStandby_String			(5007), // PNG for static icon), or GIF for animation), 50x32 for headsets and 32x32 for others
+		NamedIconPathDeviceAlertLow_String			(5008), // PNG for static icon), or GIF for animation), 50x32 for headsets and 32x32 for others
+
+		// Vendors are free to expose private debug data in this reserved region
+		VendorSpecific_Reserved_Start			(10000),
+		VendorSpecific_Reserved_End			(10999);
+		
+		public final int value;
+		
+		VRDeviceProperty(int value) {
+			this.value = value;
+		}
+	}
 
 	// couple of scratch buffers
 	private final IntBuffer error = BufferUtils.newIntBuffer(1);
@@ -125,6 +268,7 @@ public class VRContext implements Disposable {
 	// OpenVR components 
 	final IVRSystem system;
 	final IVRCompositor_FnTable compositor;
+	final IVRRenderModels_FnTable renderModels;
 	
 	// per eye data such as rendering surfaces, textures, regions, cameras etc. for each eye
 	private final VRPerEyeData perEyeData[] = new VRPerEyeData[2];
@@ -142,6 +286,9 @@ public class VRContext implements Disposable {
     private final Array<VRDeviceListener> listeners = new Array<VRDeviceListener>();
     private final VREvent_t event = new VREvent_t();
     
+    // render models
+    private final ObjectMap<String, Model> models = new ObjectMap<String, Model>();
+    
     // book keeping
 	private Eye currentEye = null;
 	private boolean renderingStarted = false;
@@ -151,14 +298,18 @@ public class VRContext implements Disposable {
 	 * Creates a new VRContext, initializes the VR system,
 	 * and sets up rendering surfaces.
 	 * 
+	 * @param renderTargetMultiplier multiplier to scale the render surface dimensions as a replacement for multisampling
 	 * @param hasStencil whether the rendering surfaces should have a stencil buffer
 	 * @throws {@link GdxRuntimeException} if the system could not be initialized 
 	 */
-	public VRContext(boolean hasStencil) {
+	public VRContext(float renderTargetMultiplier, boolean hasStencil) {
 		system = VR.VR_Init(error, VR.EVRApplicationType.VRApplication_Scene);
 		checkInitError(error);
 		
 		compositor = new IVRCompositor_FnTable(VR.VR_GetGenericInterface(VR.IVRCompositor_Version, error));
+		checkInitError(error);
+		
+		renderModels = new IVRRenderModels_FnTable(VR.VR_GetGenericInterface(VR.IVRRenderModels_Version, error));
 		checkInitError(error);
 		
 		for (int i = 0; i < devicePoses.length; i++) {
@@ -166,8 +317,8 @@ public class VRContext implements Disposable {
 		}
 		
 		system.GetRecommendedRenderTargetSize.apply(scratch, scratch2);
-		int width = scratch.get(0);
-		int height = scratch2.get(0);
+		int width = (int)(scratch.get(0) * renderTargetMultiplier);
+		int height = (int)(scratch2.get(0) * renderTargetMultiplier);
 		
 		setupEye(Eye.Left, width, height, hasStencil);
 		setupEye(Eye.Right, width, height, hasStencil);
@@ -251,7 +402,7 @@ public class VRContext implements Disposable {
 	VRDevicePose getDevicePose(int deviceIndex) {
 		if (deviceIndex < 0 || deviceIndex >= devicePoses.length) throw new IndexOutOfBoundsException("Device index must be >= 0 and <= " + devicePoses.length);
 		return devicePoses[deviceIndex];
-	}
+	}		
 	
 	/**
 	 * Start rendering. Call beginEye to setup rendering
@@ -260,8 +411,18 @@ public class VRContext implements Disposable {
 	 */
 	public void begin() {
 		if (renderingStarted) throw new GdxRuntimeException("Last begin() call not completed, call end() before starting a new render");
-		renderingStarted = true;
+		renderingStarted = true;		
 		
+		perEyeData[Eye.Left.index].cameras.update();
+		perEyeData[Eye.Right.index].cameras.update();
+	}
+	
+	/**
+	 * Get the latest tracking data and send events to {@link VRDeviceListener} instance registered with the context.
+	 * 
+	 * Must be called before begin!
+	 */
+	public void pollEvents() {
 		compositor.WaitGetPoses.apply(trackedDevicePosesReference, VR.k_unMaxTrackedDeviceCount, null, 0);
 		
 		if (!initialDevicesReported) {
@@ -274,14 +435,8 @@ public class VRContext implements Disposable {
 				}
 			}
 			initialDevicesReported = true;
-		}
-		updateDevices();
+		}		
 		
-		perEyeData[Eye.Left.index].cameras.update();
-		perEyeData[Eye.Right.index].cameras.update();
-	}
-	
-	private void updateDevices() {        
         for (int device = 0; device < VR.k_unMaxTrackedDeviceCount; device++) {
 			TrackedDevicePose_t trackedPose = trackedDevicePoses[device];
 			VRDevicePose pose = devicePoses[device];
@@ -291,6 +446,12 @@ public class VRContext implements Disposable {
 			pose.angularVelocity.set(trackedPose.vAngularVelocity.v);
 			pose.isConnected = trackedPose.bDeviceIsConnected != 0;
 			pose.isValid = trackedPose.bPoseIsValid != 0;
+			
+			if (devices[device] != null) {
+				if (devices[device].modelInstance != null) {
+					devices[device].modelInstance.transform.set(pose.transform);
+				}
+			}
         }
         
         while (system.PollNextEvent.apply(event, event.size()) != 0) {
@@ -367,7 +528,7 @@ public class VRContext implements Disposable {
 			case VR.ETrackedControllerRole.TrackedControllerRole_RightHand:
 				role = VRControllerRole.RightHand;
 				break;      				
-			}
+			} 
 		}
 		devices[index] = new VRDevice(devicePoses[index], type, role); 
 	}
@@ -442,6 +603,85 @@ public class VRContext implements Disposable {
 		batcher.end();
 	}
 	
+	Model loadRenderModel(String name) {
+		if (models.containsKey(name)) return models.get(name);
+				
+		Pointer nameString = new Memory(name.length() + 1);
+		nameString.setString(0, name);				
+
+		// FIXME we load the models synchronously cause we are lazy
+		int error = 0;
+		PointerByReference modelPointer = new PointerByReference();
+		while (true) {
+			error = renderModels.LoadRenderModel_Async.apply(nameString, modelPointer);
+			if (error != VR.EVRRenderModelError.VRRenderModelError_Loading) break;
+		}
+		
+		if (error != VR.EVRRenderModelError.VRRenderModelError_None) return null;		
+		RenderModel_t renderModel = new RenderModel_t(modelPointer.getValue());
+		
+		error = 0;
+		PointerByReference texturePointer = new PointerByReference();
+		while (true) {
+			error = renderModels.LoadTexture_Async.apply(renderModel.diffuseTextureId, texturePointer);
+			if (error != VR.EVRRenderModelError.VRRenderModelError_Loading) break;
+		}
+		
+		if (error != VR.EVRRenderModelError.VRRenderModelError_None) {
+			renderModels.FreeRenderModel.apply(renderModel);
+			return null;
+		}
+		RenderModel_TextureMap_t renderModelTexture = new RenderModel_TextureMap_t(texturePointer.getValue());
+		
+		// convert to a Model				
+		Mesh mesh = new Mesh(true, renderModel.unVertexCount, renderModel.unTriangleCount * 3, VertexAttribute.Position(), VertexAttribute.Normal(), VertexAttribute.TexCoords(0));
+		MeshPart meshPart = new MeshPart(name, mesh, 0, renderModel.unTriangleCount * 3, GL20.GL_TRIANGLES);
+		RenderModel_Vertex_t[] vertices = (RenderModel_Vertex_t[]) renderModel.rVertexData.toArray(renderModel.unVertexCount);
+		float[] packedVertices = new float[8 * renderModel.unVertexCount];
+		int i = 0;
+		for (RenderModel_Vertex_t v: vertices) {
+			packedVertices[i++] = v.vPosition.v[0];
+			packedVertices[i++] = v.vPosition.v[1];
+			packedVertices[i++] = v.vPosition.v[2];
+			
+			packedVertices[i++] = v.vNormal.v[0];
+			packedVertices[i++] = v.vNormal.v[1];
+			packedVertices[i++] = v.vNormal.v[2];
+			
+			packedVertices[i++] = v.rfTextureCoord[0];
+			packedVertices[i++] = v.rfTextureCoord[1];
+		}
+		mesh.setVertices(packedVertices);
+		short[] indices = renderModel.rIndexData.getPointer().getShortArray(0, renderModel.unTriangleCount * 3);
+		mesh.setIndices(indices);
+		
+		Pixmap pixmap = new Pixmap(renderModelTexture.unWidth, renderModelTexture.unHeight, Format.RGBA8888);
+		byte[] pixels = renderModelTexture.rubTextureMapData.getByteArray(0, renderModelTexture.unWidth * renderModelTexture.unHeight * 4);
+		pixmap.getPixels().put(pixels);
+		pixmap.getPixels().position(0);
+		Texture texture = new Texture(new PixmapTextureData(pixmap, pixmap.getFormat(), true, true));
+		Material material = new Material(new TextureAttribute(TextureAttribute.Diffuse, texture));		
+				
+		Model model = new Model();
+		model.meshes.add(mesh);
+		model.meshParts.add(meshPart);
+		model.materials.add(material);
+		Node node = new Node();
+		node.id = name;		
+		node.parts.add(new NodePart(meshPart, material));
+		model.nodes.add(node);
+		model.manageDisposable(mesh);
+		model.manageDisposable(texture);
+		
+		// FIXME freeing the model and texture crashes in JNA
+		// renderModels.FreeRenderModel.apply(renderModel);
+		// renderModels.FreeTexture.apply(renderModelTexture);
+
+		models.put(name, model);
+		
+		return model;
+	}
+	
 	/**
 	 * Keeps track of per eye data such as rendering surface,
 	 * or {@link VRCamera}.
@@ -498,11 +738,15 @@ public class VRContext implements Disposable {
 		private VRControllerRole role;
 		private long buttons = 0;
 		private final VRControllerState_t state = new VRControllerState_t();
+		private final ModelInstance modelInstance;
 		
 		VRDevice(VRDevicePose pose, VRDeviceType type, VRControllerRole role) {
 			this.pose = pose;
 			this.type = type;
 			this.role = role;
+			Model model = loadRenderModel(getStringProperty(VRDeviceProperty.RenderModelName_String));			
+			this.modelInstance = model != null ? new ModelInstance(model) : null;
+			if (model != null) this.modelInstance.transform.set(pose.transform);
 		}			
 
 		/**
@@ -535,12 +779,9 @@ public class VRContext implements Disposable {
 		 * even if controllers disconnect/reconnect during the application life-time.
 		 * </p>
 		 */
+		// FIXME role might change as per API, but never saw it
 		public VRControllerRole getControllerRole() {			
 			return role;
-		}
-		
-		void setControllerRole(VRControllerRole role) {		
-			this.role = role;
 		}
 		
 		/**
@@ -593,9 +834,79 @@ public class VRContext implements Disposable {
 			system.TriggerHapticPulse.apply(pose.index, 0, duration);
 		}
 		
+		/**
+		 * @return a boolean property or false if the query failed
+		 */
+		public boolean getBooleanProperty(VRDeviceProperty property) {
+			scratch.put(0, 0);
+			boolean result = system.GetBoolTrackedDeviceProperty.apply(this.pose.index, property.value, scratch) != 0;
+			if (scratch.get(0) != 0) return false;
+			else return result;
+		}
+		
+		/**
+		 * @return a float property or 0 if the query failed
+		 */
+		public float getFloatProperty(VRDeviceProperty property) {
+			scratch.put(0, 0);
+			float result = system.GetFloatTrackedDeviceProperty.apply(this.pose.index, property.value, scratch);
+			if (scratch.get(0) != 0) return 0;
+			else return result;
+		}
+		
+		/**
+		 * @return an int property or 0 if the query failed
+		 */
+		public int getInt32Property(VRDeviceProperty property) {
+			scratch.put(0, 0);
+			int result = system.GetInt32TrackedDeviceProperty.apply(this.pose.index, property.value, scratch);
+			if (scratch.get(0) != 0) return 0;
+			else return result;
+		}
+		
+		/**
+		 * @return a long property or 0 if the query failed
+		 */
+		public long getUInt64Property(VRDeviceProperty property) {
+			scratch.put(0, 0);
+			long result = system.GetUint64TrackedDeviceProperty.apply(this.pose.index, property.value, scratch);
+			if (scratch.get(0) != 0) return 0;
+			else return result;
+		}
+		
+		/**
+		 * @return a string property or null if the query failed
+		 */
+		public String getStringProperty(VRDeviceProperty property) {
+			scratch.put(0, 0);
+			
+			int requiredBufferLen = system.GetStringTrackedDeviceProperty.apply(this.pose.index, property.value, Pointer.NULL, 0, scratch);
+			if (scratch.get(0) != 3) return null;
+	        if (requiredBufferLen == 0) return "";	        
+
+	        Memory stringPointer = new Memory(requiredBufferLen);
+	        requiredBufferLen = system.GetStringTrackedDeviceProperty.apply(this.pose.index, property.value, stringPointer, requiredBufferLen, scratch);
+	        if (scratch.get(0) != 0) {	        	
+	        	return null;
+	        }
+	        if (requiredBufferLen == 0) {	        	
+	        	return "";
+	        }
+	        
+	        String result = stringPointer.getString(0);	        
+	        return result;
+		}
+		
+		/**
+		 * @return a {@link ModelInstance} with the transform updated to the latest tracked position for rendering or null
+		 */
+		public ModelInstance getModelInstance() {
+			return modelInstance;
+		}
+		
 		@Override
 		public String toString() {
-			return "VRDevice[index=" + pose.index + ", type=" + type + ", role=" + role + "]";
+			return "VRDevice[manufacturer=" + getStringProperty(VRDeviceProperty.ManufacturerName_String) + ", renderModel=" + getStringProperty(VRDeviceProperty.RenderModelName_String) + ", index=" + pose.index + ", type=" + type + ", role=" + role + "]";
 		}
 	}
 	

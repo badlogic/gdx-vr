@@ -17,8 +17,6 @@ import com.badlogic.gdx.graphics.g3d.environment.DirectionalLight;
 import com.badlogic.gdx.graphics.g3d.utils.ModelBuilder;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.vr.VRContext.Eye;
-import com.badlogic.gdx.vr.VRContext.VRControllerButtons;
-import com.badlogic.gdx.vr.VRContext.VRControllerRole;
 import com.badlogic.gdx.vr.VRContext.VRDevice;
 import com.badlogic.gdx.vr.VRContext.VRDeviceListener;
 import com.badlogic.gdx.vr.VRContext.VRDeviceType;
@@ -28,11 +26,11 @@ public class HelloVR extends ApplicationAdapter {
 	ModelBatch batch;
 	Environment environment;
 	Model cubeModel;
-	Array<ModelInstance> cubes = new Array<ModelInstance>();
+	Array<ModelInstance> modelInstances = new Array<ModelInstance>();	
 
 	@Override
 	public void create() {
-		context = new VRContext(false);
+		context = new VRContext(2.0f, false);
 		context.resizeCompanionWindow();
 		createScene();
 		
@@ -40,11 +38,13 @@ public class HelloVR extends ApplicationAdapter {
 			@Override
 			public void connected(VRDevice device) {
 				System.out.println(device + " connected");
+				if (device.getType() == VRDeviceType.Controller && device.getModelInstance() != null) modelInstances.add(device.getModelInstance());
 			}
 			
 			@Override
 			public void disconnected(VRDevice device) {
 				System.out.println(device + " disconnected");
+				if (device.getType() == VRDeviceType.Controller && device.getModelInstance() != null) modelInstances.removeValue(device.getModelInstance(), true);
 			}			
 			
 			@Override
@@ -67,13 +67,13 @@ public class HelloVR extends ApplicationAdapter {
 				Usage.Position | Usage.Normal);
 
 		for (int z = -3; z <= 3; z += 3) {
-			for (int y = -3; y <= 3; y += 3) {
+			for (float y = -0.5f; y <= 3; y += 3) {
 				for (int x = -3; x <= 3; x += 3) {
 					if (x == 0 && y == 0 && z == 0)
 						continue;
 					ModelInstance cube = new ModelInstance(cubeModel);
 					cube.transform.translate(x, y, z);
-					cubes.add(cube);
+					modelInstances.add(cube);
 				}
 			}
 		}
@@ -85,6 +85,10 @@ public class HelloVR extends ApplicationAdapter {
 
 	@Override
 	public void render() {
+		// poll the latest tracking data. must be called
+		// before context.begin()!
+		context.pollEvents();
+		
 		// render the scene for the left/right eye
 		context.begin();
 		renderScene(Eye.Left);
@@ -94,9 +98,7 @@ public class HelloVR extends ApplicationAdapter {
 		// render the left eye result to the companion window
 		Gdx.gl.glClearColor(1, 0, 0, 1);
 		Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
-		context.renderToCompanionWindow(Eye.Left);
-		
-		VRDevice device = context.getDeviceByType(VRDeviceType.Controller);
+		context.renderToCompanionWindow(Eye.Left);			
 	}
 
 	private void renderScene(Eye eye) {
@@ -108,8 +110,8 @@ public class HelloVR extends ApplicationAdapter {
 		Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
 
 		batch.begin(camera);
-		for (ModelInstance cube : cubes)
-			batch.render(cube, environment);
+		for (ModelInstance modelInstance : modelInstances)
+			batch.render(modelInstance, environment);
 		batch.end();
 
 		context.endEye();
