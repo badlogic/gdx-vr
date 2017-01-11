@@ -14,6 +14,7 @@ import com.badlogic.gdx.graphics.g3d.ModelBatch;
 import com.badlogic.gdx.graphics.g3d.ModelInstance;
 import com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute;
 import com.badlogic.gdx.graphics.g3d.environment.DirectionalLight;
+import com.badlogic.gdx.graphics.g3d.loader.G3dModelLoader;
 import com.badlogic.gdx.graphics.g3d.utils.ModelBuilder;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer.ShapeType;
@@ -22,6 +23,7 @@ import com.badlogic.gdx.math.Plane;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.math.collision.Ray;
 import com.badlogic.gdx.utils.Array;
+import com.badlogic.gdx.utils.JsonReader;
 import com.badlogic.gdx.vr.VRContext.Eye;
 import com.badlogic.gdx.vr.VRContext.Space;
 import com.badlogic.gdx.vr.VRContext.VRControllerButtons;
@@ -78,12 +80,8 @@ public class HelloVR extends ApplicationAdapter {
 							// - When teleporting, we want to set the tracker space origin in world space to the
 							//   teleportation point
 							// - Then we need to offset the tracker space origin in world space by the camera
-							//   x/z position so the camera is at the teleportation point in world space
-							
-							// need to factor in x/z position in tracker space to calculate world offset
-							// of cameras to new teleportation point. Y offset is 0 so we don't put
-							// the user's head on the floor :)
-							tmp2.set(0, 0, 0).add(context.getDeviceByType(VRDeviceType.HeadMountedDisplay).getPosition(Space.Tracker));
+							//   x/z position so the camera is at the teleportation point in world space							
+							tmp2.set(context.getDeviceByType(VRDeviceType.HeadMountedDisplay).getPosition(Space.Tracker));
 							tmp2.y = 0;
 							tmp.sub(tmp2);
 							
@@ -143,6 +141,11 @@ public class HelloVR extends ApplicationAdapter {
 				}
 			}
 		}
+		
+		Model apartmentModel = new G3dModelLoader(new JsonReader()).loadModel(Gdx.files.classpath("apartment.g3dj"));
+		ModelInstance apartment = new ModelInstance(apartmentModel);
+		apartment.transform.scale(1 / 100f, 1 / 100f, 1 / 100f).setTranslation(-10, 0, 0);
+		modelInstances.add(apartment);
 
 		environment = new Environment();
 		environment.set(new ColorAttribute(ColorAttribute.AmbientLight, 0.4f, 0.4f, 0.4f, 1f));
@@ -198,16 +201,16 @@ public class HelloVR extends ApplicationAdapter {
 		// render coordinate system axes for orientation
 		renderer.setProjectionMatrix(camera.combined);
 		renderer.begin(ShapeType.Line);
-		renderer.setColor(Color.WHITE);
-		renderer.line(-100, 0, 0, 0, 0, 0);
-		renderer.line(0, -100, 0, 0, 0, 0);
-		renderer.line(0, 0, -100, 0, 0, 0);
-		renderer.setColor(Color.RED);
-		renderer.line(0, 0, 0, 100, 0, 0);
-		renderer.setColor(Color.GREEN);
-		renderer.line(0, 0, 0, 0, 100, 0);
-		renderer.setColor(Color.BLUE);
-		renderer.line(0, 0, 0, 0, 0, 100);
+//		renderer.setColor(Color.WHITE);
+//		renderer.line(-100, 0, 0, 0, 0, 0);
+//		renderer.line(0, -100, 0, 0, 0, 0);
+//		renderer.line(0, 0, -100, 0, 0, 0);
+//		renderer.setColor(Color.RED);
+//		renderer.line(0, 0, 0, 100, 0, 0);
+//		renderer.setColor(Color.GREEN);
+//		renderer.line(0, 0, 0, 0, 100, 0);
+//		renderer.setColor(Color.BLUE);
+//		renderer.line(0, 0, 0, 0, 0, 100);
 		
 		
 		/** render direction, up and right axes of each controller **/
