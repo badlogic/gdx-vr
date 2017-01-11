@@ -59,6 +59,18 @@ public class VRContext implements Disposable {
 	
 	/** maximum device index **/
 	public static final int MAX_DEVICE_INDEX = VR.k_unMaxTrackedDeviceCount - 1;
+
+	/**
+	 * Space in which matrices and vectors are returned in by
+	 * {@link VRDevice} methods taking a {@link Space}.
+	 * In case {@link Space#World} is specified, all values
+	 * are transformed by the {@link Matrix4} set via
+	 * {@link VRContext#setTrackerSpaceOriginToWorldSpaceTransform(Matrix4)}.
+	 */
+	public static enum Space {
+		Tracker,
+		World
+	}
 	
 	/**
 	 * Used to select for which eye a specific property should be accessed.
@@ -293,6 +305,9 @@ public class VRContext implements Disposable {
 	private Eye currentEye = null;
 	private boolean renderingStarted = false;
 	private boolean initialDevicesReported = false;
+	
+	// tracker space origin to world space transformation
+	private final Matrix4 trackerSpaceOriginToWorldSpace = new Matrix4();
 
 	/**
 	 * Creates a new VRContext, initializes the VR system,
@@ -341,6 +356,27 @@ public class VRContext implements Disposable {
 			int error = errorBuffer.get(0);
 			throw new GdxRuntimeException("VR Initialization error: " + VR.VR_GetVRInitErrorAsEnglishDescription(error).getString(0));
 		}
+	}
+	
+	/**
+	 * Sets the tracker space to world space transform. All matrices and vectors
+	 * returned by {@link VRDevice} methods taking a {@link Space#World} are
+	 * multiplied by this transform. This allows offsetting {@link VRDevice} 
+	 * positions and orientations in world space. 
+	 * @param transform
+	 */
+	public void setTrackerSpaceOriginToWorldSpaceTransform(Matrix4 transform) {
+		trackerSpaceOriginToWorldSpace.set(transform);
+	}
+
+	/**
+	 * Returns the tracker space to world space transform. All matrices and vectors
+	 * returned by {@link VRDevice} methods taking a {@link Space#World} are
+	 * multiplied by this transform. This allows offsetting {@link VRDevice} 
+	 * positions and orientations in world space. 
+	 */
+	public Matrix4 getTrackerSpaceToWorldSpace() {
+		return trackerSpaceOriginToWorldSpace;
 	}
 	
 	/**
@@ -413,8 +449,8 @@ public class VRContext implements Disposable {
 		if (renderingStarted) throw new GdxRuntimeException("Last begin() call not completed, call end() before starting a new render");
 		renderingStarted = true;		
 		
-		perEyeData[Eye.Left.index].cameras.update();
-		perEyeData[Eye.Right.index].cameras.update();
+		perEyeData[Eye.Left.index].camera.update();
+		perEyeData[Eye.Right.index].camera.update();
 	}
 	
 	/**
@@ -448,8 +484,9 @@ public class VRContext implements Disposable {
 			pose.isValid = trackedPose.bPoseIsValid != 0;
 			
 			if (devices[device] != null) {
-				if (devices[device].modelInstance != null) {
-					devices[device].modelInstance.transform.set(pose.transform);
+				devices[device].updateAxesAndPosition();
+				if (devices[device].modelInstance != null) {					
+					devices[device].modelInstance.transform.set(trackerSpaceOriginToWorldSpace).mul(pose.transform);					
 				}
 			}
         }
@@ -530,7 +567,8 @@ public class VRContext implements Disposable {
 				break;      				
 			} 
 		}
-		devices[index] = new VRDevice(devicePoses[index], type, role); 
+		devices[index] = new VRDevice(devicePoses[index], type, role);
+		devices[index].updateAxesAndPosition();
 	}
 	
 	/**
@@ -692,14 +730,14 @@ public class VRContext implements Disposable {
 		/** a {@link TextureRegion} wrapping the color texture of the framebuffer for 2D rendering **/
 		public final TextureRegion region;
 		/** the {@link VRCamera} for this eye **/
-		public final VRCamera cameras;		
+		public final VRCamera camera;		
 		/** used internally to submit the frame buffer to OpenVR **/
 		final Texture_t texture;
 		
 		VRPerEyeData(FrameBuffer buffer, TextureRegion region, VRCamera cameras) {
 			this.buffer = buffer;
 			this.region = region;
-			this.cameras = cameras;
+			this.camera = cameras;
 			this.texture = new Texture_t(buffer.getColorBufferTexture().getTextureObjectHandle(), VR.EGraphicsAPIConvention.API_OpenGL, VR.EColorSpace.ColorSpace_Gamma);
 		}
 	}
@@ -710,11 +748,11 @@ public class VRContext implements Disposable {
 	 * whether the pose is valid and whether the device is connected. 
 	 */
 	static class VRDevicePose {
-		/** the world space transformation **/
+		/** transform encoding the position and rotation of the device in tracker space **/
 		public final Matrix4 transform = new Matrix4();
-		/** the velocity in m/s in world space **/
+		/** the velocity in m/s in tracker space space **/
 		public final Vector3 velocity = new Vector3();
-		/** the angular velocity in radians/s **/
+		/** the angular velocity in radians/s in tracker space **/
 		public final Vector3 angularVelocity = new Vector3();
 		/** whether the pose is valid our invalid, e.g. outdated because of tracking failure**/
 		public boolean isValid;
@@ -740,6 +778,18 @@ public class VRContext implements Disposable {
 		private final VRControllerState_t state = new VRControllerState_t();
 		private final ModelInstance modelInstance;
 		
+		// tracker space
+		private final Vector3 position = new Vector3();
+		private final Vector3 xAxis = new Vector3();
+		private final Vector3 yAxis = new Vector3();
+		private final Vector3 zAxis = new Vector3();
+		
+		// world space
+		private final Vector3 positionWorld = new Vector3();
+		private final Vector3 xAxisWorld = new Vector3();
+		private final Vector3 yAxisWorld = new Vector3();
+		private final Vector3 zAxisWorld = new Vector3();
+		
 		VRDevice(VRDevicePose pose, VRDeviceType type, VRControllerRole role) {
 			this.pose = pose;
 			this.type = type;
@@ -750,10 +800,51 @@ public class VRContext implements Disposable {
 		}			
 
 		/**
-		 * @return the most up-to-date {@link VRDevicePose}
+		 * @return the most up-to-date {@link VRDevicePose} in tracker space
 		 */
 		public VRDevicePose getPose() {
 			return pose;
+		}
+		
+		private void updateAxesAndPosition() {			
+			Matrix4 matrix = pose.transform;
+			matrix.getTranslation(position);
+			xAxis.set(matrix.val[Matrix4.M00], matrix.val[Matrix4.M10], matrix.val[Matrix4.M20]).nor();									
+			yAxis.set(matrix.val[Matrix4.M01], matrix.val[Matrix4.M11], matrix.val[Matrix4.M21]).nor();								
+			zAxis.set(matrix.val[Matrix4.M02], matrix.val[Matrix4.M12], matrix.val[Matrix4.M22]).nor().scl(-1);
+			
+			positionWorld.set(position).mul(trackerSpaceOriginToWorldSpace);
+			xAxisWorld.set(xAxis);
+			yAxisWorld.set(yAxis);
+			zAxisWorld.set(zAxis);
+		}
+		
+		/**
+		 * @return the position in the given {@link Space}
+		 */
+		public Vector3 getPosition(Space space) {			
+			return space == Space.Tracker ? position : positionWorld;
+		}
+		
+		/**
+		 * @return the right vector in the given {@link Space}
+		 */
+		public Vector3 getRight(Space space) {
+			return space == Space.Tracker ? xAxis : xAxisWorld;
+		}
+		
+		/**
+		 * @return the up vector in the given {@link Space}
+		 */
+		public Vector3 getUp(Space space) {
+			return space == Space.Tracker ? yAxis : yAxisWorld;
+		}
+		
+		/**
+		 * @return the direction vector in the given {@link Space}
+		 */
+		public Vector3 getDirection(Space space) {
+			return space == Space.Tracker ? zAxis : zAxisWorld;
 		}
 		
 		/**
@@ -898,11 +989,11 @@ public class VRContext implements Disposable {
 		}
 		
 		/**
-		 * @return a {@link ModelInstance} with the transform updated to the latest tracked position for rendering or null
+		 * @return a {@link ModelInstance} with the transform updated to the latest tracked position and orientation in world space for rendering or null
 		 */
 		public ModelInstance getModelInstance() {
 			return modelInstance;
-		}
+		}			
 		
 		@Override
 		public String toString() {

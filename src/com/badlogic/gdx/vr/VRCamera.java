@@ -4,6 +4,9 @@ import com.badlogic.gdx.graphics.Camera;
 import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.vr.VRContext.Eye;
+import com.badlogic.gdx.vr.VRContext.Space;
+import com.badlogic.gdx.vr.VRContext.VRDevice;
+import com.badlogic.gdx.vr.VRContext.VRDeviceType;
 
 import vr.HmdMatrix34_t;
 import vr.HmdMatrix44_t.ByValue;
@@ -24,7 +27,6 @@ public class VRCamera extends Camera {
 	public final Eye eye;
 	public final Matrix4 eyeSpace = new Matrix4();
 	public final Matrix4 invEyeSpace = new Matrix4();	
-	public final Vector3 offset = new Vector3();
 
 	public VRCamera(VRContext context, Eye eye) {
 		this.context = context;
@@ -48,13 +50,33 @@ public class VRCamera extends Camera {
 		invEyeSpace.set(eyeSpace).inv();
 		 
 		// get the pose matrix from the HDM
-		view.set(context.getDevicePose(VRContext.HMD_DEVICE_INDEX).transform).inv();
+		VRDevice hmd = context.getDeviceByType(VRDeviceType.HeadMountedDisplay);
+		view.idt();
+		float[] m = view.val;
+		Vector3 x = hmd.getRight(Space.World);
+		Vector3 y = hmd.getUp(Space.World);
+		Vector3 z = hmd.getDirection(Space.World);
+		Vector3 p = hmd.getPosition(Space.World);
+		m[Matrix4.M00] = x.x;
+		m[Matrix4.M10] = x.y;
+		m[Matrix4.M20] = x.z;
+		
+		m[Matrix4.M01] = y.x;
+		m[Matrix4.M11] = y.y;
+		m[Matrix4.M21] = y.z;
+		
+		m[Matrix4.M02] = -z.x;
+		m[Matrix4.M12] = -z.y;
+		m[Matrix4.M22] = -z.z;
+		
+		view.setTranslation(p);
+		view.inv();
 		
 		// FIXME set position, direction, up etc. based on eye + view matrix
 		
 		combined.set(projection);
 		Matrix4.mul(combined.val, invEyeSpace.val);
-		Matrix4.mul(combined.val, view.val);
+		Matrix4.mul(combined.val, view.val);		
 		
 		if (updateFrustum) {
 			invProjectionView.set(combined);
