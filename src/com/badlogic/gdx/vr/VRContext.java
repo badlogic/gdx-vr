@@ -310,6 +310,14 @@ public class VRContext implements Disposable {
 	private final Matrix4 trackerSpaceOriginToWorldSpace = new Matrix4();
 
 	/**
+	 * Creates a new VRContext, initializes the VR system, and
+	 * sets up rendering surfaces with depth attachments.
+	 */
+	public VRContext() {
+		this(1, false);
+	}
+	
+	/**
 	 * Creates a new VRContext, initializes the VR system,
 	 * and sets up rendering surfaces.
 	 * 
@@ -594,7 +602,7 @@ public class VRContext implements Disposable {
 	 */
 	public void endEye() {
 		if (currentEye == null) throw new GdxRuntimeException("Call beginEye() before endEye()");
-		perEyeData[currentEye.index].buffer.end();
+		perEyeData[currentEye.index].buffer.end();		
 		currentEye = null;		
 	}
 	
@@ -607,9 +615,7 @@ public class VRContext implements Disposable {
 		renderingStarted = false;
 		
 		compositor.Submit.apply(VR.EVREye.EYE_Left, perEyeData[Eye.Left.index].texture, null, VR.EVRSubmitFlags.Submit_Default);
-		compositor.Submit.apply(VR.EVREye.Eye_Right, perEyeData[Eye.Right.index].texture, null, VR.EVRSubmitFlags.Submit_Default);
-		Gdx.gl.glFinish();
-		compositor.PostPresentHandoff.apply();		
+		compositor.Submit.apply(VR.EVREye.Eye_Right, perEyeData[Eye.Right.index].texture, null, VR.EVRSubmitFlags.Submit_Default);		
 	}
 	
 	public void dispose() {
@@ -814,6 +820,8 @@ public class VRContext implements Disposable {
 			zAxis.set(matrix.val[Matrix4.M02], matrix.val[Matrix4.M12], matrix.val[Matrix4.M22]).nor().scl(-1);
 			
 			positionWorld.set(position).mul(trackerSpaceOriginToWorldSpace);
+			
+			// FIXME properly transform axes to world space
 			xAxisWorld.set(xAxis);
 			yAxisWorld.set(yAxis);
 			zAxisWorld.set(zAxis);
