@@ -121,7 +121,7 @@ public class HelloVR extends ApplicationAdapter {
 			}
 		}
 
-		Model apartmentModel = new G3dModelLoader(new JsonReader()).loadModel(Gdx.files.classpath("apartment.g3dj"));
+		Model apartmentModel = new G3dModelLoader(new JsonReader()).loadModel(Gdx.files.internal("apartment.g3dj"));
 		ModelInstance apartment = new ModelInstance(apartmentModel);
 		apartment.transform.scale(1 / 100f, 1 / 100f, 1 / 100f);
 		modelInstances.add(apartment);
