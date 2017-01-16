@@ -1,6 +1,22 @@
 package com.badlogic.gdx.vr;
 
+import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
+
+import org.lwjgl.PointerBuffer;
+import org.lwjgl.openvr.HmdMatrix34;
+import org.lwjgl.openvr.HmdMatrix44;
+import org.lwjgl.openvr.OpenVR;
+import org.lwjgl.openvr.RenderModel;
+import org.lwjgl.openvr.RenderModelTextureMap;
+import org.lwjgl.openvr.RenderModelVertex;
+import org.lwjgl.openvr.TrackedDevicePose;
+import org.lwjgl.openvr.VR;
+import org.lwjgl.openvr.VRCompositor;
+import org.lwjgl.openvr.VRControllerState;
+import org.lwjgl.openvr.VREvent;
+import org.lwjgl.openvr.VRRenderModels;
+import org.lwjgl.openvr.VRSystem;
 
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.GL20;
@@ -20,6 +36,7 @@ import com.badlogic.gdx.graphics.g3d.model.Node;
 import com.badlogic.gdx.graphics.g3d.model.NodePart;
 import com.badlogic.gdx.graphics.glutils.FrameBuffer;
 import com.badlogic.gdx.graphics.glutils.PixmapTextureData;
+import com.badlogic.gdx.maps.objects.TextureMapObject;
 import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.utils.Array;
@@ -27,23 +44,8 @@ import com.badlogic.gdx.utils.BufferUtils;
 import com.badlogic.gdx.utils.Disposable;
 import com.badlogic.gdx.utils.GdxRuntimeException;
 import com.badlogic.gdx.utils.ObjectMap;
-import com.sun.jna.Memory;
-import com.sun.jna.Pointer;
-import com.sun.jna.ptr.PointerByReference;
 
-import vr.HmdMatrix34_t;
-import vr.HmdMatrix44_t;
-import vr.IVRCompositor_FnTable;
-import vr.IVRRenderModels_FnTable;
-import vr.IVRSystem;
-import vr.RenderModel_TextureMap_t;
-import vr.RenderModel_Vertex_t;
-import vr.RenderModel_t;
-import vr.Texture_t;
-import vr.TrackedDevicePose_t;
-import vr.VR;
-import vr.VRControllerState_t;
-import vr.VREvent_t;
+import static org.lwjgl.openvr.VR.*;
 
 /**
  * Responsible for initializing the VR system, managing rendering surfaces,
@@ -277,11 +279,6 @@ public class VRContext implements Disposable {
 	private final IntBuffer error = BufferUtils.newIntBuffer(1);
 	private final IntBuffer scratch = BufferUtils.newIntBuffer(1), scratch2 = BufferUtils.newIntBuffer(1);
 	
-	// OpenVR components 
-	final IVRSystem system;
-	final IVRCompositor_FnTable compositor;
-	final IVRRenderModels_FnTable renderModels;
-	
 	// per eye data such as rendering surfaces, textures, regions, cameras etc. for each eye
 	private final VRPerEyeData perEyeData[] = new VRPerEyeData[2];
 	
@@ -289,14 +286,14 @@ public class VRContext implements Disposable {
 	private final SpriteBatch batcher;
 	
 	// internal native objects to get device poses 
-	private final TrackedDevicePose_t.ByReference trackedDevicePosesReference = new TrackedDevicePose_t.ByReference();
-    private final TrackedDevicePose_t[] trackedDevicePoses = (TrackedDevicePose_t[]) trackedDevicePosesReference.toArray(VR.k_unMaxTrackedDeviceCount);
+	private final TrackedDevicePose.Buffer trackedDevicePoses = TrackedDevicePose.create(VR.k_unMaxTrackedDeviceCount);
+	private final TrackedDevicePose.Buffer trackedDeviceGamePoses = TrackedDevicePose.create(VR.k_unMaxTrackedDeviceCount);
     
     // devices, their poses and listeners
-    private final VRDevicePose[] devicePoses = new VRDevicePose[trackedDevicePoses.length];
-    private final VRDevice[] devices = new VRDevice[trackedDevicePoses.length];
+    private final VRDevicePose[] devicePoses = new VRDevicePose[VR.k_unMaxTrackedDeviceCount];
+    private final VRDevice[] devices = new VRDevice[VR.k_unMaxTrackedDeviceCount];
     private final Array<VRDeviceListener> listeners = new Array<VRDeviceListener>();
-    private final VREvent_t event = new VREvent_t();
+    private final VREvent event = VREvent.create();
     
     // render models
     private final ObjectMap<String, Model> models = new ObjectMap<String, Model>();
@@ -325,21 +322,22 @@ public class VRContext implements Disposable {
 	 * @param hasStencil whether the rendering surfaces should have a stencil buffer
 	 * @throws {@link GdxRuntimeException} if the system could not be initialized 
 	 */
-	public VRContext(float renderTargetMultiplier, boolean hasStencil) {
-		system = VR.VR_Init(error, VR.EVRApplicationType.VRApplication_Scene);
+	public VRContext(float renderTargetMultiplier, boolean hasStencil) {		
+		int token = VR.VR_InitInternal(error, VR.EVRApplicationType_VRApplication_Scene);
+		checkInitError(error);		
+		OpenVR.create(token);
+		
+		VR.VR_GetGenericInterface(VR.IVRCompositor_Version, error);			
 		checkInitError(error);
 		
-		compositor = new IVRCompositor_FnTable(VR.VR_GetGenericInterface(VR.IVRCompositor_Version, error));
-		checkInitError(error);
-		
-		renderModels = new IVRRenderModels_FnTable(VR.VR_GetGenericInterface(VR.IVRRenderModels_Version, error));
+		VR.VR_GetGenericInterface(VR.IVRRenderModels_Version, error);
 		checkInitError(error);
 		
 		for (int i = 0; i < devicePoses.length; i++) {
 			devicePoses[i] = new VRDevicePose(i);
 		}
 		
-		system.GetRecommendedRenderTargetSize.apply(scratch, scratch2);
+		VRSystem.VRSystem_GetRecommendedRenderTargetSize(scratch, scratch2);
 		int width = (int)(scratch.get(0) * renderTargetMultiplier);
 		int height = (int)(scratch2.get(0) * renderTargetMultiplier);
 		
@@ -360,9 +358,9 @@ public class VRContext implements Disposable {
 	}
 	
 	private void checkInitError(IntBuffer errorBuffer) {
-		if (errorBuffer.get(0) != VR.EVRInitError.VRInitError_None) {
+		if (errorBuffer.get(0) != VR.EVRInitError_VRInitError_None) {
 			int error = errorBuffer.get(0);
-			throw new GdxRuntimeException("VR Initialization error: " + VR.VR_GetVRInitErrorAsEnglishDescription(error).getString(0));
+			throw new GdxRuntimeException("VR Initialization error: " + VR.VR_GetVRInitErrorAsEnglishDescription(error));
 		}
 	}
 	
@@ -467,11 +465,11 @@ public class VRContext implements Disposable {
 	 * Must be called before begin!
 	 */
 	public void pollEvents() {
-		compositor.WaitGetPoses.apply(trackedDevicePosesReference, VR.k_unMaxTrackedDeviceCount, null, 0);
+		VRCompositor.VRCompositor_WaitGetPoses(trackedDevicePoses, trackedDeviceGamePoses);
 		
 		if (!initialDevicesReported) {
 			for (int index = 0; index < devices.length; index++) {
-				if (system.IsTrackedDeviceConnected.apply(index) != 0) {
+				if (VRSystem.VRSystem_IsTrackedDeviceConnected(index)) {
 					createDevice(index);        		
 		    		for (VRDeviceListener l: listeners) {
 		    			l.connected(devices[index]);
@@ -482,14 +480,14 @@ public class VRContext implements Disposable {
 		}		
 		
         for (int device = 0; device < VR.k_unMaxTrackedDeviceCount; device++) {
-			TrackedDevicePose_t trackedPose = trackedDevicePoses[device];
+			TrackedDevicePose trackedPose = trackedDevicePoses.get(device);
 			VRDevicePose pose = devicePoses[device];
 			
-			hmdMat34ToMatrix4(trackedPose.mDeviceToAbsoluteTracking, pose.transform);
-			pose.velocity.set(trackedPose.vVelocity.v);
-			pose.angularVelocity.set(trackedPose.vAngularVelocity.v);
-			pose.isConnected = trackedPose.bDeviceIsConnected != 0;
-			pose.isValid = trackedPose.bPoseIsValid != 0;
+			hmdMat34ToMatrix4(trackedPose.mDeviceToAbsoluteTracking(), pose.transform);
+			pose.velocity.set(trackedPose.vVelocity().v(0), trackedPose.vVelocity().v(1), trackedPose.vVelocity().v(2));
+			pose.angularVelocity.set(trackedPose.vAngularVelocity().v(0), trackedPose.vAngularVelocity().v(1), trackedPose.vAngularVelocity().v(2));
+			pose.isConnected = trackedPose.bDeviceIsConnected();
+			pose.isValid = trackedPose.bPoseIsValid();
 			
 			if (devices[device] != null) {
 				devices[device].updateAxesAndPosition();
@@ -499,45 +497,41 @@ public class VRContext implements Disposable {
 			}
         }
         
-        while (system.PollNextEvent.apply(event, event.size()) != 0) {
-        	int index = event.trackedDeviceIndex;
-        	if (index < 0 || index > trackedDevicePoses.length) continue;        	        
+        while (VRSystem.VRSystem_PollNextEvent(event)) {
+        	int index = event.trackedDeviceIndex();
+        	if (index < 0 || index > VR.k_unMaxTrackedDeviceCount) continue;        	        
         	int button = 0;
         	
-        	switch (event.eventType) {
-        	case VR.EVREventType.VREvent_TrackedDeviceActivated:        		
+        	switch (event.eventType()) {
+        	case VR.EVREventType_VREvent_TrackedDeviceActivated:        		
         		createDevice(index);        		
         		for (VRDeviceListener l: listeners) {
         			l.connected(devices[index]);
         		}        		
         		break;
-        	case VR.EVREventType.VREvent_TrackedDeviceDeactivated:
-        		index = event.trackedDeviceIndex;
+        	case VR.EVREventType_VREvent_TrackedDeviceDeactivated:
+        		index = event.trackedDeviceIndex();
         		if (devices[index] == null) continue;
         		for (VRDeviceListener l: listeners) {
         			l.disconnected(devices[index]);
         		}
         		devices[index] = null;        		
         		break;        	        
-        	case VR.EVREventType.VREvent_ButtonPress:
-        		if (devices[index] == null) continue;
-        		event.data.setType("controller");
-        		event.data.read();
-        		button = event.data.controller.button;
+        	case VR.EVREventType_VREvent_ButtonPress:
+        		if (devices[index] == null) continue;        		
+        		button = event.data().controller().button();
         		devices[index].setButton(button, true);
         		for (VRDeviceListener l: listeners) {
         			l.buttonPressed(devices[index], button);
         		}
         		break;
-        	case VR.EVREventType.VREvent_ButtonUnpress:
-        		if (devices[index] == null) continue;
-        		event.data.setType("controller");
-        		event.data.read();        		
-        		button = event.data.controller.button;
+        	case VR.EVREventType_VREvent_ButtonUnpress:
+        		if (devices[index] == null) continue;        		
+        		button = event.data().controller().button();
         		devices[index].setButton(button, false);
         		for (VRDeviceListener l: listeners) {
         			l.buttonReleased(devices[index], button);
-        		}        		
+        		}
         		break;        	   
         	}
         }
@@ -545,18 +539,18 @@ public class VRContext implements Disposable {
 	
 	private void createDevice(int index) {
 		VRDeviceType type = null;
-		int deviceClass = system.GetTrackedDeviceClass.apply(index);        		        		
+		int deviceClass = VRSystem.VRSystem_GetTrackedDeviceClass(index);        		        		
 		switch(deviceClass) {
-		case VR.ETrackedDeviceClass.TrackedDeviceClass_HMD: 
+		case VR.ETrackedDeviceClass_TrackedDeviceClass_HMD: 
 			type = VRDeviceType.HeadMountedDisplay; 
 			break;
-		case VR.ETrackedDeviceClass.TrackedDeviceClass_Controller:
+		case VR.ETrackedDeviceClass_TrackedDeviceClass_Controller:
 			type = VRDeviceType.Controller;
 			break;
-		case VR.ETrackedDeviceClass.TrackedDeviceClass_TrackingReference:
+		case VR.ETrackedDeviceClass_TrackedDeviceClass_TrackingReference:
 			type = VRDeviceType.BaseStation;
 			break;
-		case VR.ETrackedDeviceClass.TrackedDeviceClass_Other:
+		case VR.ETrackedDeviceClass_TrackedDeviceClass_GenericTracker:
 			type = VRDeviceType.Generic;
 			break;
 		default:
@@ -565,12 +559,12 @@ public class VRContext implements Disposable {
 		
 		VRControllerRole role = VRControllerRole.Unknown;
 		if (type == VRDeviceType.Controller) {
-			int r =  system.GetControllerRoleForTrackedDeviceIndex.apply(index);
+			int r =  VRSystem.VRSystem_GetControllerRoleForTrackedDeviceIndex(index);
 			switch(r) {
-			case VR.ETrackedControllerRole.TrackedControllerRole_LeftHand:
+			case VR.ETrackedControllerRole_TrackedControllerRole_LeftHand:
 				role = VRControllerRole.LeftHand;
 				break;
-			case VR.ETrackedControllerRole.TrackedControllerRole_RightHand:
+			case VR.ETrackedControllerRole_TrackedControllerRole_RightHand:
 				role = VRControllerRole.RightHand;
 				break;      				
 			} 
@@ -614,15 +608,15 @@ public class VRContext implements Disposable {
 		if (!renderingStarted) throw new GdxRuntimeException("Call begin() before end()");
 		renderingStarted = false;
 		
-		compositor.Submit.apply(VR.EVREye.EYE_Left, perEyeData[Eye.Left.index].texture, null, VR.EVRSubmitFlags.Submit_Default);
-		compositor.Submit.apply(VR.EVREye.Eye_Right, perEyeData[Eye.Right.index].texture, null, VR.EVRSubmitFlags.Submit_Default);		
+		VRCompositor.VRCompositor_Submit(VR.EVREye_Eye_Left, perEyeData[Eye.Left.index].texture, null, VR.EVRSubmitFlags_Submit_Default);
+		VRCompositor.VRCompositor_Submit(VR.EVREye_Eye_Right, perEyeData[Eye.Right.index].texture, null, VR.EVRSubmitFlags_Submit_Default);		
 	}
 	
 	public void dispose() {
 		for (VRPerEyeData eyeData: perEyeData)
 			eyeData.buffer.dispose();
 		batcher.dispose();
-		VR.VR_Shutdown();
+		VR_ShutdownInternal();
 	}
 	
 	/**
@@ -647,60 +641,61 @@ public class VRContext implements Disposable {
 		batcher.end();
 	}
 	
-	Model loadRenderModel(String name) {
-		if (models.containsKey(name)) return models.get(name);
-				
-		Pointer nameString = new Memory(name.length() + 1);
-		nameString.setString(0, name);				
+	private Model loadRenderModel(String name) {
+		if (models.containsKey(name)) return models.get(name);						
 
 		// FIXME we load the models synchronously cause we are lazy
 		int error = 0;
-		PointerByReference modelPointer = new PointerByReference();
+		PointerBuffer modelPointer = PointerBuffer.allocateDirect(1);
 		while (true) {
-			error = renderModels.LoadRenderModel_Async.apply(nameString, modelPointer);
-			if (error != VR.EVRRenderModelError.VRRenderModelError_Loading) break;
+			error = VRRenderModels.VRRenderModels_LoadRenderModel_Async(name, modelPointer);
+			if (error != VR.EVRRenderModelError_VRRenderModelError_Loading) break;
 		}
 		
-		if (error != VR.EVRRenderModelError.VRRenderModelError_None) return null;		
-		RenderModel_t renderModel = new RenderModel_t(modelPointer.getValue());
+		if (error != VR.EVRRenderModelError_VRRenderModelError_None) return null;		
+		RenderModel renderModel = new RenderModel(modelPointer.getByteBuffer(RenderModel.SIZEOF));
 		
 		error = 0;
-		PointerByReference texturePointer = new PointerByReference();
+		PointerBuffer texturePointer = PointerBuffer.allocateDirect(1);
 		while (true) {
-			error = renderModels.LoadTexture_Async.apply(renderModel.diffuseTextureId, texturePointer);
-			if (error != VR.EVRRenderModelError.VRRenderModelError_Loading) break;
+			error = VRRenderModels.VRRenderModels_LoadTexture_Async(renderModel.diffuseTextureId(), texturePointer);
+			if (error != VR.EVRRenderModelError_VRRenderModelError_Loading) break;
 		}
 		
-		if (error != VR.EVRRenderModelError.VRRenderModelError_None) {
-			renderModels.FreeRenderModel.apply(renderModel);
+		if (error != VR.EVRRenderModelError_VRRenderModelError_None) {
+			VRRenderModels.VRRenderModels_FreeRenderModel(renderModel);
 			return null;
 		}
-		RenderModel_TextureMap_t renderModelTexture = new RenderModel_TextureMap_t(texturePointer.getValue());
+						
+		RenderModelTextureMap renderModelTexture = new RenderModelTextureMap(texturePointer.getByteBuffer(RenderModelTextureMap.SIZEOF));
 		
 		// convert to a Model				
-		Mesh mesh = new Mesh(true, renderModel.unVertexCount, renderModel.unTriangleCount * 3, VertexAttribute.Position(), VertexAttribute.Normal(), VertexAttribute.TexCoords(0));
-		MeshPart meshPart = new MeshPart(name, mesh, 0, renderModel.unTriangleCount * 3, GL20.GL_TRIANGLES);
-		RenderModel_Vertex_t[] vertices = (RenderModel_Vertex_t[]) renderModel.rVertexData.toArray(renderModel.unVertexCount);
-		float[] packedVertices = new float[8 * renderModel.unVertexCount];
+		Mesh mesh = new Mesh(true, renderModel.unVertexCount(), renderModel.unTriangleCount() * 3, VertexAttribute.Position(), VertexAttribute.Normal(), VertexAttribute.TexCoords(0));
+		MeshPart meshPart = new MeshPart(name, mesh, 0, renderModel.unTriangleCount() * 3, GL20.GL_TRIANGLES);
+		RenderModelVertex.Buffer vertices = renderModel.rVertexData();
+		float[] packedVertices = new float[8 * renderModel.unVertexCount()];
 		int i = 0;
-		for (RenderModel_Vertex_t v: vertices) {
-			packedVertices[i++] = v.vPosition.v[0];
-			packedVertices[i++] = v.vPosition.v[1];
-			packedVertices[i++] = v.vPosition.v[2];
+		while(vertices.remaining() > 0) {
+			RenderModelVertex v = vertices.get();			
+			packedVertices[i++] = v.vPosition().v(0);
+			packedVertices[i++] = v.vPosition().v(1);
+			packedVertices[i++] = v.vPosition().v(2);
 			
-			packedVertices[i++] = v.vNormal.v[0];
-			packedVertices[i++] = v.vNormal.v[1];
-			packedVertices[i++] = v.vNormal.v[2];
+			packedVertices[i++] = v.vNormal().v(0);
+			packedVertices[i++] = v.vNormal().v(1);
+			packedVertices[i++] = v.vNormal().v(2);
 			
-			packedVertices[i++] = v.rfTextureCoord[0];
-			packedVertices[i++] = v.rfTextureCoord[1];
+			packedVertices[i++] = v.rfTextureCoord().get(0);
+			packedVertices[i++] = v.rfTextureCoord().get(1);
 		}
 		mesh.setVertices(packedVertices);
-		short[] indices = renderModel.rIndexData.getPointer().getShortArray(0, renderModel.unTriangleCount * 3);
+		short[] indices = new short[renderModel.unTriangleCount() * 3];
+		renderModel.IndexData().get(indices);		
 		mesh.setIndices(indices);
 		
-		Pixmap pixmap = new Pixmap(renderModelTexture.unWidth, renderModelTexture.unHeight, Format.RGBA8888);
-		byte[] pixels = renderModelTexture.rubTextureMapData.getByteArray(0, renderModelTexture.unWidth * renderModelTexture.unHeight * 4);
+		Pixmap pixmap = new Pixmap(renderModelTexture.unWidth(), renderModelTexture.unHeight(), Format.RGBA8888);
+		byte[] pixels = new byte[renderModelTexture.unWidth() * renderModelTexture.unHeight() * 4];
+		renderModelTexture.rubTextureMapData(pixels.length).get(pixels);
 		pixmap.getPixels().put(pixels);
 		pixmap.getPixels().position(0);
 		Texture texture = new Texture(new PixmapTextureData(pixmap, pixmap.getFormat(), true, true));
@@ -738,13 +733,14 @@ public class VRContext implements Disposable {
 		/** the {@link VRCamera} for this eye **/
 		public final VRCamera camera;		
 		/** used internally to submit the frame buffer to OpenVR **/
-		final Texture_t texture;
+		final org.lwjgl.openvr.Texture texture;
 		
 		VRPerEyeData(FrameBuffer buffer, TextureRegion region, VRCamera cameras) {
 			this.buffer = buffer;
 			this.region = region;
 			this.camera = cameras;
-			this.texture = new Texture_t(buffer.getColorBufferTexture().getTextureObjectHandle(), VR.EGraphicsAPIConvention.API_OpenGL, VR.EColorSpace.ColorSpace_Gamma);
+			this.texture = org.lwjgl.openvr.Texture.create();
+			this.texture.set(buffer.getColorBufferTexture().getTextureObjectHandle(), VR.ETextureType_TextureType_OpenGL, VR.EColorSpace_ColorSpace_Gamma);
 		}
 	}
 	
@@ -781,7 +777,7 @@ public class VRContext implements Disposable {
 		private final VRDeviceType type;
 		private VRControllerRole role;
 		private long buttons = 0;
-		private final VRControllerState_t state = new VRControllerState_t();
+		private final VRControllerState state = VRControllerState.create();
 		private final ModelInstance modelInstance;
 		
 		// tracker space
@@ -887,7 +883,7 @@ public class VRContext implements Disposable {
 		 * @return whether the device is connected
 		 */
 		public boolean isConnected() {
-			return system.IsTrackedDeviceConnected.apply(pose.index) != 0;
+			return VRSystem.VRSystem_IsTrackedDeviceConnected(pose.index);
 		}
 		
 		/**
@@ -911,8 +907,8 @@ public class VRContext implements Disposable {
 		 */
 		public float getAxisX(int axis) {
 			if (axis < 0 || axis >= 5) return 0; 
-			system.GetControllerState.apply(pose.index, state);
-			return state.rAxis[axis].x;
+			VRSystem.VRSystem_GetControllerState(pose.index, state);
+			return state.rAxis(axis).x();
 		}
 		
 		/**
@@ -920,8 +916,8 @@ public class VRContext implements Disposable {
 		 */
 		public float getAxisY(int axis) {
 			if (axis < 0 || axis >= 5) return 0; 
-			system.GetControllerState.apply(pose.index, state);
-			return state.rAxis[axis].y;
+			VRSystem.VRSystem_GetControllerState(pose.index, state);
+			return state.rAxis(axis).y();
 		}
 		
 		/**
@@ -930,7 +926,7 @@ public class VRContext implements Disposable {
 		 * @param duration pulse duration in microseconds
 		 */
 		public void triggerHapticPulse(short duration) {
-			system.TriggerHapticPulse.apply(pose.index, 0, duration);
+			VRSystem.VRSystem_TriggerHapticPulse(pose.index, 0, duration);
 		}
 		
 		/**
@@ -938,7 +934,7 @@ public class VRContext implements Disposable {
 		 */
 		public boolean getBooleanProperty(VRDeviceProperty property) {
 			scratch.put(0, 0);
-			boolean result = system.GetBoolTrackedDeviceProperty.apply(this.pose.index, property.value, scratch) != 0;
+			boolean result = VRSystem.VRSystem_GetBoolTrackedDeviceProperty(this.pose.index, property.value, scratch);
 			if (scratch.get(0) != 0) return false;
 			else return result;
 		}
@@ -948,7 +944,7 @@ public class VRContext implements Disposable {
 		 */
 		public float getFloatProperty(VRDeviceProperty property) {
 			scratch.put(0, 0);
-			float result = system.GetFloatTrackedDeviceProperty.apply(this.pose.index, property.value, scratch);
+			float result = VRSystem.VRSystem_GetFloatTrackedDeviceProperty(this.pose.index, property.value, scratch);
 			if (scratch.get(0) != 0) return 0;
 			else return result;
 		}
@@ -958,7 +954,7 @@ public class VRContext implements Disposable {
 		 */
 		public int getInt32Property(VRDeviceProperty property) {
 			scratch.put(0, 0);
-			int result = system.GetInt32TrackedDeviceProperty.apply(this.pose.index, property.value, scratch);
+			int result = VRSystem.VRSystem_GetInt32TrackedDeviceProperty(this.pose.index, property.value, scratch);
 			if (scratch.get(0) != 0) return 0;
 			else return result;
 		}
@@ -968,7 +964,7 @@ public class VRContext implements Disposable {
 		 */
 		public long getUInt64Property(VRDeviceProperty property) {
 			scratch.put(0, 0);
-			long result = system.GetUint64TrackedDeviceProperty.apply(this.pose.index, property.value, scratch);
+			long result = VRSystem.VRSystem_GetUint64TrackedDeviceProperty(this.pose.index, property.value, scratch);
 			if (scratch.get(0) != 0) return 0;
 			else return result;
 		}
@@ -979,21 +975,9 @@ public class VRContext implements Disposable {
 		public String getStringProperty(VRDeviceProperty property) {
 			scratch.put(0, 0);
 			
-			int requiredBufferLen = system.GetStringTrackedDeviceProperty.apply(this.pose.index, property.value, Pointer.NULL, 0, scratch);
-			if (scratch.get(0) != 3) return null;
-	        if (requiredBufferLen == 0) return "";	        
-
-	        Memory stringPointer = new Memory(requiredBufferLen);
-	        requiredBufferLen = system.GetStringTrackedDeviceProperty.apply(this.pose.index, property.value, stringPointer, requiredBufferLen, scratch);
-	        if (scratch.get(0) != 0) {	        	
-	        	return null;
-	        }
-	        if (requiredBufferLen == 0) {	        	
-	        	return "";
-	        }
-	        
-	        String result = stringPointer.getString(0);	        
-	        return result;
+			String result = VRSystem.VRSystem_GetStringTrackedDeviceProperty(this.pose.index, property.value, scratch);
+			if (scratch.get(0) != 0) return null;
+	        return result;	       
 		}
 		
 		/**
@@ -1023,53 +1007,53 @@ public class VRContext implements Disposable {
 		void buttonReleased(VRDevice device, int button);
 	}
 	
-	static void hmdMat4toMatrix4(HmdMatrix44_t hdm, Matrix4 mat) {
+	static void hmdMat4toMatrix4(HmdMatrix44 hdm, Matrix4 mat) {
 		float[] val = mat.val;
-		float[] m = hdm.m;
+		FloatBuffer m = hdm.m();
 		
-		val[0] = m[0];
-		val[1] = m[4];
-		val[2] = m[8];
-		val[3] = m[12];
+		val[0] = m.get(0);
+		val[1] = m.get(4);
+		val[2] = m.get(8);
+		val[3] = m.get(12);
 		
-		val[4] = m[1];
-		val[5] = m[5];
-		val[6] = m[9];
-		val[7] = m[13];
+		val[4] = m.get(1);
+		val[5] = m.get(5);
+		val[6] = m.get(9);
+		val[7] = m.get(13);
 		
-		val[8] = m[2];
-		val[9] = m[6];
-		val[10] = m[10];
-		val[11] = m[14];
+		val[8] = m.get(2);
+		val[9] = m.get(6);
+		val[10] = m.get(10);
+		val[11] = m.get(14);
 		
-		val[12] = m[3];
-		val[13] = m[7];
-		val[14] = m[11];
-		val[15] = m[15];
+		val[12] = m.get(3);
+		val[13] = m.get(7);
+		val[14] = m.get(11);
+		val[15] = m.get(15);
 	}
 	
-	static void hmdMat34ToMatrix4(HmdMatrix34_t hmd, Matrix4 mat) {
+	static void hmdMat34ToMatrix4(HmdMatrix34 hmd, Matrix4 mat) {
 		float[] val = mat.val;
-		float[] m = hmd.m;
+		FloatBuffer m = hmd.m();
 		
-		val[0] = m[0];
-		val[1] = m[4];
-		val[2] = m[8];
+		val[0] = m.get(0);
+		val[1] = m.get(4);
+		val[2] = m.get(8);
 		val[3] = 0;
 		
-		val[4] = m[1];
-		val[5] = m[5];
-		val[6] = m[9];
+		val[4] = m.get(1);
+		val[5] = m.get(5);
+		val[6] = m.get(9);
 		val[7] = 0;
 		
-		val[8] = m[2];
-		val[9] = m[6];
-		val[10] = m[10];
+		val[8] = m.get(2);
+		val[9] = m.get(6);
+		val[10] = m.get(10);
 		val[11] = 0;
 		
-		val[12] = m[3];
-		val[13] = m[7];
-		val[14] = m[11];
+		val[12] = m.get(3);
+		val[13] = m.get(7);
+		val[14] = m.get(11);
 		val[15] = 1;
 	}
 }

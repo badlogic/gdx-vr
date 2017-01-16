@@ -87,11 +87,6 @@
 
 	<dependencies>
 		<dependency>
-			<groupId>io.github.java-graphics</groupId>
-			<artifactId>openvr</artifactId>
-			<version>1.0</version>
-		</dependency>
-		<dependency>
 			<groupId>com.badlogicgames.gdx</groupId>
 			<artifactId>gdx</artifactId>
 			<version>${gdx.version}</version>

@@ -1,5 +1,9 @@
 package com.badlogic.gdx.vr;
 
+import org.lwjgl.openvr.HmdMatrix34;
+import org.lwjgl.openvr.HmdMatrix44;
+import org.lwjgl.openvr.VRSystem;
+
 import com.badlogic.gdx.graphics.Camera;
 import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.math.Vector3;
@@ -7,10 +11,6 @@ import com.badlogic.gdx.vr.VRContext.Eye;
 import com.badlogic.gdx.vr.VRContext.Space;
 import com.badlogic.gdx.vr.VRContext.VRDevice;
 import com.badlogic.gdx.vr.VRContext.VRDeviceType;
-
-import vr.HmdMatrix34_t;
-import vr.HmdMatrix44_t.ByValue;
-import vr.VR;
 
 /**
  * A {@link Camera} implementation for one {@link Eye}
@@ -37,15 +37,18 @@ public class VRCamera extends Camera {
 	public void update() {
 		update(true);		
 	}
+	
+	HmdMatrix44 projectionMat = HmdMatrix44.create();
+	HmdMatrix34 eyeMat = HmdMatrix34.create();
 
 	@Override
 	public void update(boolean updateFrustum) {
 		// get the projection matrix from the HDM
-		ByValue projectionMat = context.system.GetProjectionMatrix.apply(eye.index, near, far, VR.EGraphicsAPIConvention.API_OpenGL);
+		VRSystem.VRSystem_GetProjectionMatrix(eye.index, near, far, projectionMat);
 		VRContext.hmdMat4toMatrix4(projectionMat, projection);
 		
 		// get the eye space matrix from the HDM
-		HmdMatrix34_t.ByValue eyeMat = context.system.GetEyeToHeadTransform.apply(eye.index);
+		VRSystem.VRSystem_GetEyeToHeadTransform(eye.index, eyeMat);
 		VRContext.hmdMat34ToMatrix4(eyeMat, eyeSpace);
 		invEyeSpace.set(eyeSpace).inv();
 		 
@@ -72,7 +75,9 @@ public class VRCamera extends Camera {
 		view.setTranslation(p);
 		view.inv();
 		
-		// FIXME set position, direction, up etc. based on eye + view matrix
+		position.set(p);
+		direction.set(z);
+		up.set(y);		
 		
 		combined.set(projection);
 		Matrix4.mul(combined.val, invEyeSpace.val);
