@@ -1,5 +1,7 @@
 package com.badlogic.gdx.vr;
 
+import static org.lwjgl.openvr.VR.VR_ShutdownInternal;
+
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 
@@ -36,7 +38,6 @@ import com.badlogic.gdx.graphics.g3d.model.Node;
 import com.badlogic.gdx.graphics.g3d.model.NodePart;
 import com.badlogic.gdx.graphics.glutils.FrameBuffer;
 import com.badlogic.gdx.graphics.glutils.PixmapTextureData;
-import com.badlogic.gdx.maps.objects.TextureMapObject;
 import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.utils.Array;
@@ -44,8 +45,6 @@ import com.badlogic.gdx.utils.BufferUtils;
 import com.badlogic.gdx.utils.Disposable;
 import com.badlogic.gdx.utils.GdxRuntimeException;
 import com.badlogic.gdx.utils.ObjectMap;
-
-import static org.lwjgl.openvr.VR.*;
 
 /**
  * Responsible for initializing the VR system, managing rendering surfaces,
@@ -712,9 +711,8 @@ public class VRContext implements Disposable {
 		model.manageDisposable(mesh);
 		model.manageDisposable(texture);
 		
-		// FIXME freeing the model and texture crashes in JNA
-		// renderModels.FreeRenderModel.apply(renderModel);
-		// renderModels.FreeTexture.apply(renderModelTexture);
+		VRRenderModels.VRRenderModels_FreeRenderModel(renderModel);
+		VRRenderModels.VRRenderModels_FreeTexture(renderModelTexture);
 
 		models.put(name, model);
 		
