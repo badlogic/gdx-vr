@@ -43,7 +43,7 @@
 
 	<repositories>
 		<repository>
-			<id>gdx-nightlies</id>
+			<id>snapshots</id>
 			<url>https://oss.sonatype.org/content/repositories/snapshots/</url>
 		</repository>
 	</repositories>
@@ -109,6 +109,14 @@
 			<artifactId>gdx-backend-lwjgl3</artifactId>
 			<version>${gdx.version}</version>
 			<scope>test</scope>
+			<exclusions>
+				<exclusion>org.lwjgl</exclusion>
+			</exclusions>
+		</dependency>
+		<dependency>
+			<groupId>org.lwjgl</groupId>
+			<artifactId>lwjgl-openvr</artifactId>
+			<version>3.1.2-SNAPSHOT</version>
 		</dependency>
 	</dependencies>
 </project>
