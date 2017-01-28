@@ -15,6 +15,7 @@ import static org.lwjgl.openvr.VRCompositor.*;
 import java.nio.Buffer;
 import java.nio.IntBuffer;
 
+import org.lwjgl.glfw.GLFWErrorCallback;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.openvr.OpenVR;
 import org.lwjgl.openvr.Texture;
@@ -35,12 +36,14 @@ public class OpenVRTest {
 			this.width = width;
 			this.height = height;
 			
-			handle = glGenBuffers();
+			handle = glGenFramebuffers();
 			glBindFramebuffer(GL_FRAMEBUFFER, handle);
 			
 			colorTextureHandle = glGenTextures();
 			glBindTexture(GL_TEXTURE_2D, colorTextureHandle);
 			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, 0);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);  
 			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorTextureHandle, 0);
 			
 			int status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
@@ -90,7 +93,7 @@ public class OpenVRTest {
 		VRCompositor_WaitGetPoses(trackedDevicePoses, trackedDeviceGamePoses);
 	}
 	
-	public static void renderVR () {
+	public static void renderVR () {		
 		glBindFramebuffer(GL_FRAMEBUFFER, left.handle);
 		glViewport(0, 0, left.width, left.height);
 		glClearColor(1, 0, 0, 1);
@@ -98,18 +101,26 @@ public class OpenVRTest {
 
 		glBindFramebuffer(GL_FRAMEBUFFER, right.handle);
 		glViewport(0, 0, right.width, right.height);
-		glClearColor(1, 0, 0, 1);
+		glClearColor(0, 1, 0, 1);
 		glClear(GL_COLOR_BUFFER_BIT);
 
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		
-		textureLeft.set(left.colorTextureHandle, ETextureType_TextureType_OpenGL, EColorSpace_ColorSpace_Gamma);
-		VRCompositor_Submit(EVREye_Eye_Left, textureLeft, null, EVRSubmitFlags_Submit_Default);
-		textureRight.set(right.colorTextureHandle, ETextureType_TextureType_OpenGL, EVRSubmitFlags_Submit_Default);
+		textureLeft.set(left.handle, ETextureType_TextureType_OpenGL, EColorSpace_ColorSpace_Gamma);
+		int error = VRCompositor_Submit(EVREye_Eye_Left, textureLeft, null, EVRSubmitFlags_Submit_Default);
+		textureRight.set(right.handle, ETextureType_TextureType_OpenGL, EColorSpace_ColorSpace_Gamma);
 		VRCompositor_Submit(EVREye_Eye_Right, textureRight, null, EVRSubmitFlags_Submit_Default);
 	}
 	
+	static GLFWErrorCallback errorCB = new GLFWErrorCallback() {
+		@Override
+		public void invoke(int arg0, long arg1) {
+			System.out.println("error");
+		}
+	};
+	
 	public static void main (String[] args) {
+		glfwSetErrorCallback(errorCB);
 		if (!glfwInit()) {
 			System.out.println("Couldn't init GLFW");
 			System.exit(0);
@@ -117,6 +128,7 @@ public class OpenVRTest {
 		
 		glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
 		glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+		glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
 		glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 		
 		long window = glfwCreateWindow(800, 600, "OpenVR + GLFW", 0, 0);
@@ -126,9 +138,10 @@ public class OpenVRTest {
 		}
 		
 		glfwMakeContextCurrent(window);
-		glfwSwapInterval(0);
+		glfwSwapInterval(0);			
 		
 		GL.createCapabilities();
+		
 		setupVR();
 		
 		while (!glfwWindowShouldClose(window)) {
