@@ -22,6 +22,7 @@ import org.lwjgl.openvr.VRSystem;
 
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.GL20;
+import com.badlogic.gdx.graphics.GLTexture;
 import com.badlogic.gdx.graphics.Mesh;
 import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.Pixmap.Format;
@@ -37,6 +38,7 @@ import com.badlogic.gdx.graphics.g3d.model.MeshPart;
 import com.badlogic.gdx.graphics.g3d.model.Node;
 import com.badlogic.gdx.graphics.g3d.model.NodePart;
 import com.badlogic.gdx.graphics.glutils.FrameBuffer;
+import com.badlogic.gdx.graphics.glutils.GLFrameBuffer;
 import com.badlogic.gdx.graphics.glutils.PixmapTextureData;
 import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.math.Vector3;
@@ -623,7 +625,7 @@ public class VRContext implements Disposable {
 	 * can be displayed without stretching.
 	 */
 	public void resizeCompanionWindow() {
-		FrameBuffer buffer = perEyeData[0].buffer;
+		GLFrameBuffer<Texture> buffer = perEyeData[0].buffer;
 		Gdx.graphics.setWindowedMode(buffer.getWidth(), buffer.getHeight());
 	}
 	
@@ -632,7 +634,7 @@ public class VRContext implements Disposable {
 	 * to the entirety of the companion window.
 	 */
 	public void renderToCompanionWindow(Eye eye) {		
-		FrameBuffer buffer = perEyeData[eye.index].buffer;
+		GLFrameBuffer<Texture> buffer = perEyeData[eye.index].buffer;
 		TextureRegion region = perEyeData[eye.index].region;		
 		batcher.getProjectionMatrix().setToOrtho2D(0, 0, buffer.getWidth(), buffer.getHeight());
 		batcher.begin();
@@ -724,8 +726,8 @@ public class VRContext implements Disposable {
 	 * or {@link VRCamera}.
 	 */
 	public static class VRPerEyeData {
-		/** the {@link FrameBuffer} for this eye */
-		public final FrameBuffer buffer;		
+		/** the {@link GLFrameBuffer<Texture>} for this eye */
+		private GLFrameBuffer<Texture> buffer;		
 		/** a {@link TextureRegion} wrapping the color texture of the framebuffer for 2D rendering **/
 		public final TextureRegion region;
 		/** the {@link VRCamera} for this eye **/
@@ -739,6 +741,19 @@ public class VRContext implements Disposable {
 			this.camera = cameras;
 			this.texture = org.lwjgl.openvr.Texture.create();
 			this.texture.set(buffer.getColorBufferTexture().getTextureObjectHandle(), VR.ETextureType_TextureType_OpenGL, VR.EColorSpace_ColorSpace_Gamma);
+		}
+		
+		public void setFrameBuffer(GLFrameBuffer<Texture> fbo, boolean disposeOld) {
+			if (disposeOld) {
+				this.buffer.dispose();
+			}
+			this.buffer = fbo;
+			this.region.setTexture(fbo.getColorBufferTexture());
+			this.texture.set(buffer.getColorBufferTexture().getTextureObjectHandle(), VR.ETextureType_TextureType_OpenGL, VR.EColorSpace_ColorSpace_Gamma);
+		}
+		
+		public GLFrameBuffer<Texture> getFrameBuffer() {
+			return buffer;
 		}
 	}
 	
