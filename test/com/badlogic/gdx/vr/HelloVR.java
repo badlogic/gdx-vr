@@ -195,7 +195,7 @@ public class HelloVR extends ApplicationAdapter {
 								tmp2.y = 0;
 								tmp.sub(tmp2);
 
-								context.getTrackerSpaceToWorldSpace().idt().translate(tmp);
+								context.getTrackerSpaceOriginToWorldSpaceTranslationOffset().set(tmp);
 							}
 							isTeleporting = false;
 						}

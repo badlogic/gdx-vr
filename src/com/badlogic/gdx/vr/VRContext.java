@@ -41,6 +41,7 @@ import com.badlogic.gdx.graphics.glutils.FrameBuffer;
 import com.badlogic.gdx.graphics.glutils.GLFrameBuffer;
 import com.badlogic.gdx.graphics.glutils.PixmapTextureData;
 import com.badlogic.gdx.math.Matrix4;
+import com.badlogic.gdx.math.Quaternion;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.BufferUtils;
@@ -304,9 +305,10 @@ public class VRContext implements Disposable {
 	private boolean renderingStarted = false;
 	private boolean initialDevicesReported = false;
 	
-	// tracker space origin to world space transformation
-	private final Matrix4 trackerSpaceOriginToWorldSpace = new Matrix4();
-
+	// offsets for translation and rotation from tracker to world space
+	private final Vector3 trackerSpaceOriginToWorldSpaceTranslationOffset = new Vector3();
+	private final Matrix4 trackerSpaceToWorldspaceRotationOffset = new Matrix4();
+	
 	/**
 	 * Creates a new VRContext, initializes the VR system, and
 	 * sets up rendering surfaces with depth attachments.
@@ -366,24 +368,24 @@ public class VRContext implements Disposable {
 	}
 	
 	/**
-	 * Sets the tracker space to world space transform. All matrices and vectors
+	 * Returns the tracker space to world space translation offset. All positional vectors
 	 * returned by {@link VRDevice} methods taking a {@link Space#World} are
-	 * multiplied by this transform. This allows offsetting {@link VRDevice} 
+	 * multiplied offset by this vector. This allows offsetting {@link VRDevice} 
 	 * positions and orientations in world space. 
-	 * @param transform
 	 */
-	public void setTrackerSpaceOriginToWorldSpaceTransform(Matrix4 transform) {
-		trackerSpaceOriginToWorldSpace.set(transform);
+	public Vector3 getTrackerSpaceOriginToWorldSpaceTranslationOffset () {
+		return trackerSpaceOriginToWorldSpaceTranslationOffset;
 	}
-
+	
 	/**
-	 * Returns the tracker space to world space transform. All matrices and vectors
+	 * Returns the tracker space to world space rotation offset. All rotational vectors
 	 * returned by {@link VRDevice} methods taking a {@link Space#World} are
-	 * multiplied by this transform. This allows offsetting {@link VRDevice} 
-	 * positions and orientations in world space. 
+	 * rotated by this offset. This allows offsetting {@link VRDevice} 
+	 * orientations in world space. The matrix needs to only have
+	 * rotational components.
 	 */
-	public Matrix4 getTrackerSpaceToWorldSpace() {
-		return trackerSpaceOriginToWorldSpace;
+	public Matrix4 getTrackerSpaceToWorldspaceRotationOffset () {
+		return trackerSpaceToWorldspaceRotationOffset;
 	}
 	
 	/**
@@ -493,7 +495,7 @@ public class VRContext implements Disposable {
 			if (devices[device] != null) {
 				devices[device].updateAxesAndPosition();
 				if (devices[device].modelInstance != null) {					
-					devices[device].modelInstance.transform.set(trackerSpaceOriginToWorldSpace).mul(pose.transform);					
+					devices[device].modelInstance.transform.idt().translate(trackerSpaceOriginToWorldSpaceTranslationOffset).mul(trackerSpaceToWorldspaceRotationOffset).mul(pose.transform);					
 				}
 			}
         }
@@ -805,6 +807,9 @@ public class VRContext implements Disposable {
 		private final Vector3 yAxisWorld = new Vector3();
 		private final Vector3 zAxisWorld = new Vector3();
 		
+		private final Vector3 vecTmp = new Vector3();
+		private final Matrix4 matTmp = new Matrix4();
+		
 		VRDevice(VRDevicePose pose, VRDeviceType type, VRControllerRole role) {
 			this.pose = pose;
 			this.type = type;
@@ -821,19 +826,22 @@ public class VRContext implements Disposable {
 			return pose;
 		}
 		
-		private void updateAxesAndPosition() {			
+		public void updateAxesAndPosition() {			
 			Matrix4 matrix = pose.transform;
 			matrix.getTranslation(position);
 			xAxis.set(matrix.val[Matrix4.M00], matrix.val[Matrix4.M10], matrix.val[Matrix4.M20]).nor();									
 			yAxis.set(matrix.val[Matrix4.M01], matrix.val[Matrix4.M11], matrix.val[Matrix4.M21]).nor();								
 			zAxis.set(matrix.val[Matrix4.M02], matrix.val[Matrix4.M12], matrix.val[Matrix4.M22]).nor().scl(-1);
 			
-			positionWorld.set(position).mul(trackerSpaceOriginToWorldSpace);
+			matTmp.set(trackerSpaceToWorldspaceRotationOffset);
+			positionWorld.set(position).mul(matTmp);
+			positionWorld.add(trackerSpaceOriginToWorldSpaceTranslationOffset);
 			
-			// FIXME properly transform axes to world space
-			xAxisWorld.set(xAxis);
-			yAxisWorld.set(yAxis);
-			zAxisWorld.set(zAxis);
+			matTmp.set(trackerSpaceToWorldspaceRotationOffset);
+			
+			xAxisWorld.set(xAxis).mul(matTmp);
+			yAxisWorld.set(yAxis).mul(matTmp);
+			zAxisWorld.set(zAxis).mul(matTmp);
 		}
 		
 		/**

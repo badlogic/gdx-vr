@@ -40,6 +40,7 @@ public class VRCamera extends Camera {
 	
 	HmdMatrix44 projectionMat = HmdMatrix44.create();
 	HmdMatrix34 eyeMat = HmdMatrix34.create();
+	Vector3 tmp = new Vector3();
 
 	@Override
 	public void update(boolean updateFrustum) {
@@ -54,26 +55,12 @@ public class VRCamera extends Camera {
 		 
 		// get the pose matrix from the HDM
 		VRDevice hmd = context.getDeviceByType(VRDeviceType.HeadMountedDisplay);
-		view.idt();
-		float[] m = view.val;
-		Vector3 x = hmd.getRight(Space.World);
 		Vector3 y = hmd.getUp(Space.World);
 		Vector3 z = hmd.getDirection(Space.World);
 		Vector3 p = hmd.getPosition(Space.World);
-		m[Matrix4.M00] = x.x;
-		m[Matrix4.M10] = x.y;
-		m[Matrix4.M20] = x.z;
 		
-		m[Matrix4.M01] = y.x;
-		m[Matrix4.M11] = y.y;
-		m[Matrix4.M21] = y.z;
-		
-		m[Matrix4.M02] = -z.x;
-		m[Matrix4.M12] = -z.y;
-		m[Matrix4.M22] = -z.z;
-		
-		view.setTranslation(p);
-		view.inv();
+		view.idt();
+		view.setToLookAt(p, tmp.set(p).add(z), y);
 		
 		position.set(p);
 		direction.set(z);
