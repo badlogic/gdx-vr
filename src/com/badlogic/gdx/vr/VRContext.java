@@ -764,7 +764,7 @@ public class VRContext implements Disposable {
 	 * transform, velocity and angular velocity. Also indicates
 	 * whether the pose is valid and whether the device is connected. 
 	 */
-	static class VRDevicePose {
+	public static class VRDevicePose {
 		/** transform encoding the position and rotation of the device in tracker space **/
 		public final Matrix4 transform = new Matrix4();
 		/** the velocity in m/s in tracker space space **/
