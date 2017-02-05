@@ -919,7 +919,7 @@ public class VRContext implements Disposable {
 			if (pressed) {
 				buttons |= (1l << button); 
 			} else {
-				buttons &= (1l << button);
+				buttons ^= (1l << button);
 			}
 		}
 		
