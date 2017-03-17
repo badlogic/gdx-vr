@@ -11,7 +11,7 @@
 	<groupId>com.badlogicgames.gdx</groupId>
 	<artifactId>gdx-vr</artifactId>
 	<packaging>jar</packaging>
-	<version>1.9.6-SNAPSHOT</version>
+	<version>1.9.7-SNAPSHOT</version>
 
 	<name>gdx-vr</name>
 	<description>libGDX VR extension using OpenVR</description>
